@@ -7,9 +7,9 @@ mechanism with the smallest merge surface:
 
 | Channel | What | How consumers use it |
 |---|---|---|
-| **A: CI gates** | 9-gate reusable workflow + composite actions + gate scripts | `uses: craigmbooth/colormath/.github/workflows/gates.yml@vX.Y.Z` |
+| **A: CI gates** | 9-gate reusable workflow + composite actions + gate scripts | `uses: ColorMath/ci/.github/workflows/gates.yml@vX.Y.Z` |
 | **B: in-repo files** | Dockerfile, Makefiles, compose, deploy.sh, … *(planned)* | Copier template; `copier update` 3-way-merges |
-| **C: Terraform** | Cloud Run / database / redis / WIF modules *(planned)* | `source = "git::https://github.com/craigmbooth/colormath.git//terraform/modules/<name>?ref=vX.Y.Z"` |
+| **C: Terraform** | Cloud Run / database / redis / WIF modules *(planned)* | `source = "git::https://github.com/ColorMath/ci.git//terraform/modules/<name>?ref=vX.Y.Z"` |
 | **D: agent harness** | Portable Claude Code skills/commands *(planned)* | Plugin marketplace |
 
 colormath ships **no runtime application code** — that's the lesson of its
@@ -71,7 +71,7 @@ concurrency:
 
 jobs:
   gates:
-    uses: craigmbooth/colormath/.github/workflows/gates.yml@v0.1.0
+    uses: ColorMath/ci/.github/workflows/gates.yml@v0.1.0
     with:
       python-version: "3.12"
       default-branch: main

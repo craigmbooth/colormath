@@ -7,7 +7,7 @@ name: Gates
 #
 #   jobs:
 #     gates:
-#       uses: craigmbooth/colormath/.github/workflows/gates.yml@v0.1.0
+#       uses: ColorMath/ci/.github/workflows/gates.yml@v0.1.0
 #       with:
 #         python-version: "3.12"
 #         default-branch: main
@@ -133,7 +133,7 @@ jobs:
       - name: Check out colormath (gate tooling)
         uses: actions/checkout@v6
         with:
-          repository: craigmbooth/colormath
+          repository: ColorMath/ci
           ref: ${{ inputs.colormath-ref }}
           path: .colormath-lib
           sparse-checkout: |
@@ -195,7 +195,7 @@ jobs:
       - name: Check out colormath (gate tooling)
         uses: actions/checkout@v6
         with:
-          repository: craigmbooth/colormath
+          repository: ColorMath/ci
           ref: ${{ inputs.colormath-ref }}
           path: .colormath-lib
           sparse-checkout: |
@@ -265,7 +265,7 @@ jobs:
       - name: Check out colormath (gate tooling)
         uses: actions/checkout@v6
         with:
-          repository: craigmbooth/colormath
+          repository: ColorMath/ci
           ref: ${{ inputs.colormath-ref }}
           path: .colormath-lib
           sparse-checkout: |
@@ -312,7 +312,7 @@ jobs:
       - name: Check out colormath (gate tooling)
         uses: actions/checkout@v6
         with:
-          repository: craigmbooth/colormath
+          repository: ColorMath/ci
           ref: ${{ inputs.colormath-ref }}
           path: .colormath-lib
           sparse-checkout: |
@@ -355,7 +355,7 @@ jobs:
       - name: Check out colormath (gate tooling)
         uses: actions/checkout@v6
         with:
-          repository: craigmbooth/colormath
+          repository: ColorMath/ci
           ref: ${{ inputs.colormath-ref }}
           path: .colormath-lib
           sparse-checkout: |
@@ -403,7 +403,7 @@ jobs:
       - name: Check out colormath (gate tooling)
         uses: actions/checkout@v6
         with:
-          repository: craigmbooth/colormath
+          repository: ColorMath/ci
           ref: ${{ inputs.colormath-ref }}
           path: .colormath-lib
           sparse-checkout: |
@@ -450,7 +450,7 @@ jobs:
       - name: Check out colormath (gate tooling)
         uses: actions/checkout@v6
         with:
-          repository: craigmbooth/colormath
+          repository: ColorMath/ci
           ref: ${{ inputs.colormath-ref }}
           path: .colormath-lib
           sparse-checkout: |
@@ -495,7 +495,7 @@ jobs:
       - name: Check out colormath (gate tooling)
         uses: actions/checkout@v6
         with:
-          repository: craigmbooth/colormath
+          repository: ColorMath/ci
           ref: ${{ inputs.colormath-ref }}
           path: .colormath-lib
           sparse-checkout: |
@@ -555,7 +555,7 @@ jobs:
       - name: Check out colormath (gate tooling)
         uses: actions/checkout@v6
         with:
-          repository: craigmbooth/colormath
+          repository: ColorMath/ci
           ref: ${{ inputs.colormath-ref }}
           path: .colormath-lib
           sparse-checkout: |
