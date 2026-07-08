@@ -1,0 +1,7 @@
+{
+  "extends": ["html-validate:a11y"],
+  "root": true,
+  "rules": {
+    "prefer-native-element": "off"
+  }
+}

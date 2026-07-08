@@ -1,0 +1,55 @@
+name: Gate summary
+description: >
+  Append a compact stats block for a CI gate to $GITHUB_STEP_SUMMARY:
+  status badge + parsed stat bullets + a collapsible tail of the gate's
+  captured log. Run with `if: always()` as the last step of a gate job.
+
+inputs:
+  title:
+    description: Heading for the block, e.g. "🧪 Tests (JS + Python)"
+    required: true
+  status:
+    description: Pass `${{ job.status }}`
+    required: true
+  log-files:
+    description: Space-separated log paths to tail into the details block
+    default: ""
+  tail-lines:
+    description: How many log lines to show
+    default: "15"
+  stats:
+    description: >
+      Bash snippet whose stdout becomes the stat bullets (one "- ..." line
+      each). Runs after the gate, so it can grep the log files.
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Write summary
+      shell: bash
+      env:
+        SUMMARY_TITLE: ${{ inputs.title }}
+        SUMMARY_STATUS: ${{ inputs.status }}
+        SUMMARY_LOGS: ${{ inputs.log-files }}
+        SUMMARY_TAIL: ${{ inputs.tail-lines }}
+        SUMMARY_STATS: ${{ inputs.stats }}
+      run: |
+        icon="✅"; [ "$SUMMARY_STATUS" = "success" ] || icon="❌"
+        {
+          echo "## ${SUMMARY_TITLE} · $icon ${SUMMARY_STATUS}"
+          echo ""
+          if [ -n "$SUMMARY_STATS" ]; then
+            bash -c "$SUMMARY_STATS" || true
+            echo ""
+          fi
+          if [ -n "$SUMMARY_LOGS" ]; then
+            echo "<details><summary>Output (tail)</summary>"
+            echo ""
+            echo '```'
+            # shellcheck disable=SC2086 — word splitting of log paths is intended
+            tail -n "$SUMMARY_TAIL" $SUMMARY_LOGS 2>/dev/null || true
+            echo '```'
+            echo "</details>"
+          fi
+        } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,17 @@
+{
+  "name": "colormath-example",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "styles": "stylelint \"static/css/src/**/*.css\"",
+    "a11y": "html-validate \"templates/**/*.html\""
+  },
+  "devDependencies": {
+    "html-validate": "^11.0.0",
+    "stylelint": "^16.0.0",
+    "stylelint-declaration-strict-value": "^1.10.0",
+    "vitest": "^3.0.0"
+  }
+}

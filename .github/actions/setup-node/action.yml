@@ -1,0 +1,34 @@
+name: Set up Node + JS dependencies
+description: >
+  Install Node (with npm cache keyed on the workdir's package-lock.json) and
+  run `npm install`. Skips the install quietly when the workdir has no
+  package.json, so Python-only consumers can leave JS gates disabled without
+  breaking the tests gate.
+
+inputs:
+  node-version:
+    description: Node version to install
+    required: true
+  workdir:
+    description: Directory containing package.json
+    default: "."
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Node.js
+      uses: actions/setup-node@v6
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: ${{ hashFiles(format('{0}/package-lock.json', inputs.workdir)) != '' && 'npm' || '' }}
+        cache-dependency-path: ${{ inputs.workdir }}/package-lock.json
+
+    - name: Install JS dependencies
+      shell: bash
+      working-directory: ${{ inputs.workdir }}
+      run: |
+        if [ -f package.json ]; then
+          npm install
+        else
+          echo "no package.json in $(pwd) — skipping npm install"
+        fi

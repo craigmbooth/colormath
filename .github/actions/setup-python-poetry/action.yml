@@ -1,0 +1,41 @@
+name: Set up Python + Poetry
+description: >
+  Install Python and Poetry (pipx-pinned), configure an in-project virtualenv,
+  and restore the .venv cache keyed on the workdir's poetry.lock. The caller
+  runs `poetry install` itself (install args differ per gate).
+
+inputs:
+  python-version:
+    description: Python version to install
+    required: true
+  poetry-version:
+    description: Poetry version to pin
+    default: "2.1.4"
+  workdir:
+    description: Directory containing pyproject.toml / poetry.lock
+    default: "."
+  cache-suffix:
+    description: Extra cache-key segment so gates with different install args don't share a venv
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install Poetry
+      shell: bash
+      run: pipx install "poetry==${{ inputs.poetry-version }}"
+
+    - name: Configure Poetry for CI
+      shell: bash
+      run: poetry config virtualenvs.in-project true  # keep .venv in-tree for caching
+
+    - name: Load cached dependencies
+      uses: actions/cache@v5
+      with:
+        path: ${{ inputs.workdir }}/.venv
+        key: venv-${{ inputs.cache-suffix }}-${{ runner.os }}-py${{ inputs.python-version }}-${{ hashFiles(format('{0}/poetry.lock', inputs.workdir)) }}

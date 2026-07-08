@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+
+# JS
+node_modules/
+
+# The gates workflow checks colormath out here inside consumer repos; make
+# sure a local experiment never commits it.
+.colormath-lib/

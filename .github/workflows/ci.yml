@@ -1,0 +1,29 @@
+name: CI
+
+# Self-hosting check: every colormath PR runs its own reusable gate suite
+# against example/ (a minimal compliant consumer). A gates change that can't
+# pass here can't be tagged. The suite includes the gitleaks gate, which scans
+# this repo's full history — colormath is public, so that gate is
+# non-negotiable.
+#
+# colormath-ref is the PR's own SHA so the gate scripts and composite actions
+# under test are the ones from this change, not the last release.
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gates:
+    uses: ./.github/workflows/gates.yml
+    with:
+      workdir: example
+      python-version: "3.12"
+      default-branch: main
+      colormath-ref: ${{ github.sha }}

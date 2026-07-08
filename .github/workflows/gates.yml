@@ -1,0 +1,606 @@
+name: Gates
+
+# Reusable CI gate suite for the PorticoFoundry app archetype
+# (FastAPI + Poetry + Tailwind/Alpine + Jinja templates).
+#
+# Consumers call this with a ~25-line workflow:
+#
+#   jobs:
+#     gates:
+#       uses: craigmbooth/colormath/.github/workflows/gates.yml@v0.1.0
+#       with:
+#         python-version: "3.12"
+#         default-branch: main
+#
+# Nine parallel gates: ruff, tests (JS + Python), typecheck (mypy),
+# styles (stylelint), sast (bandit), secrets (gitleaks), a11y (html-validate),
+# deps (pip-audit), diff-coverage (diff-cover). Register each gate's job name
+# as a required status check in the consumer's branch ruleset.
+#
+# Per-gate `enable-*` inputs exist so a consumer can adopt incrementally
+# (turn a gate off, burn down its findings, turn it on). A disabled gate shows
+# as skipped — visible, never silently absent.
+#
+# Consumer-side configuration contract (all optional):
+#   .colormath/audit.conf   sourced by scripts/audit-deps.sh
+#                           (POETRY_EXPORT_GROUPS, IGNORE_VULNS allowlist)
+#   .colormath/ci.env       env sourced before pytest runs (test secrets/config)
+#   .gitleaks.toml          gitleaks allowlist (used when present)
+#   [tool.bandit]           in pyproject.toml (bandit scan scope/excludes)
+#   npm scripts             "test" (vitest), "styles" (stylelint),
+#                           "a11y" (html-validate) — JS gates need them
+#
+# Every job ends with a "gate summary" that appends a compact stats block to
+# $GITHUB_STEP_SUMMARY, so the whole gate matrix is legible at a glance.
+# Gate commands tee output to /tmp/*.log (bash runs with -o pipefail, so tee
+# never masks a real failure); the summary reads the log back.
+
+on:
+  workflow_call:
+    inputs:
+      python-version:
+        description: Python version for all Python gates
+        type: string
+        default: "3.12"
+      node-version:
+        description: Node version for all JS gates (html-validate 11.x needs >=22)
+        type: string
+        default: "22"
+      default-branch:
+        description: Base branch for diff-coverage (falls back to the repo default branch)
+        type: string
+        default: ""
+      workdir:
+        description: Directory containing the app (pyproject.toml etc.); repo root by default
+        type: string
+        default: "."
+      poetry-install-args:
+        description: Extra args for `poetry install` in test/typecheck gates, e.g. "--with webapp,worker"
+        type: string
+        default: ""
+      colormath-ref:
+        description: colormath ref to fetch gate scripts from (stamped per release; do not set as a consumer)
+        type: string
+        default: "v0.1.0"
+      ruff-spec:
+        description: pip requirement spec for ruff (match your pyproject dev pin)
+        type: string
+        default: "ruff>=0.14,<0.15"
+      ruff-select:
+        description: If set, restrict `ruff check` to these rules (e.g. "I" for imports only); empty = full lint
+        type: string
+        default: ""
+      bandit-spec:
+        description: pip requirement spec for bandit (match your pyproject dev pin)
+        type: string
+        default: "bandit>=1.9,<2"
+      gitleaks-version:
+        description: gitleaks release to install
+        type: string
+        default: "8.30.1"
+      diff-cover-fail-under:
+        description: Minimum coverage percent for changed lines
+        type: string
+        default: "90"
+      free-disk-space:
+        description: Reclaim runner disk before installing (needed for heavy ML dependency trees)
+        type: boolean
+        default: false
+      enable-ruff:
+        type: boolean
+        default: true
+      enable-tests:
+        type: boolean
+        default: true
+      enable-typecheck:
+        type: boolean
+        default: true
+      enable-styles:
+        type: boolean
+        default: true
+      enable-sast:
+        type: boolean
+        default: true
+      enable-secrets:
+        type: boolean
+        default: true
+      enable-a11y:
+        type: boolean
+        default: true
+      enable-deps:
+        type: boolean
+        default: true
+      enable-diff-coverage:
+        type: boolean
+        default: true
+
+env:
+  # Resolved base branch for diff-coverage: explicit input, else repo default.
+  DEFAULT_BRANCH: ${{ inputs.default-branch != '' && inputs.default-branch || github.event.repository.default_branch }}
+
+jobs:
+  ruff:
+    name: Ruff (format + lint)
+    if: ${{ inputs.enable-ruff }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.workdir }}
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v6
+
+      - name: Check out colormath (gate tooling)
+        uses: actions/checkout@v6
+        with:
+          repository: craigmbooth/colormath
+          ref: ${{ inputs.colormath-ref }}
+          path: .colormath-lib
+          sparse-checkout: |
+            scripts
+            .github
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      # Install ruff alone (no full project deps) so this gate stays fast.
+      # The spec input should match the consumer's pyproject constraint so CI
+      # matches local `make`.
+      - name: Install ruff
+        run: pip install '${{ inputs.ruff-spec }}'
+
+      - name: Ruff format check
+        run: ruff format --check . 2>&1 | tee /tmp/ruff-format.log
+
+      - name: Ruff lint
+        run: |
+          if [ -n "${{ inputs.ruff-select }}" ]; then
+            ruff check --select '${{ inputs.ruff-select }}' . 2>&1 | tee /tmp/ruff-lint.log
+          else
+            ruff check . 2>&1 | tee /tmp/ruff-lint.log
+          fi
+
+      - name: Gate summary
+        if: always()
+        uses: ./.colormath-lib/.github/actions/gate-summary
+        with:
+          title: "🧹 Ruff — format + lint"
+          status: ${{ job.status }}
+          log-files: /tmp/ruff-format.log /tmp/ruff-lint.log
+          stats: |
+            files=$(grep -m1 -oE '[0-9]+ files?' /tmp/ruff-format.log 2>/dev/null || echo 'n/a')
+            echo "- Files checked: ${files}"
+
+  tests:
+    name: Tests (JS + Python)
+    if: ${{ inputs.enable-tests }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.workdir }}
+    steps:
+      - name: Free up disk space
+        if: ${{ inputs.free-disk-space }}
+        working-directory: .
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost "$AGENT_TOOLSDIRECTORY"
+          sudo apt-get clean
+          df -h
+
+      - name: Check out code
+        uses: actions/checkout@v6
+
+      - name: Check out colormath (gate tooling)
+        uses: actions/checkout@v6
+        with:
+          repository: craigmbooth/colormath
+          ref: ${{ inputs.colormath-ref }}
+          path: .colormath-lib
+          sparse-checkout: |
+            scripts
+            .github
+
+      - name: Set up Python + Poetry (cached venv)
+        uses: ./.colormath-lib/.github/actions/setup-python-poetry
+        with:
+          python-version: ${{ inputs.python-version }}
+          workdir: ${{ inputs.workdir }}
+          cache-suffix: tests
+
+      - name: Install Python dependencies
+        run: poetry install --no-interaction --no-root ${{ inputs.poetry-install-args }}
+
+      - name: Run consumer extra-install hook
+        run: |
+          if [ -x .colormath/ci-extra-install.sh ]; then
+            ./.colormath/ci-extra-install.sh
+          fi
+
+      - name: Set up Node + JS dependencies
+        uses: ./.colormath-lib/.github/actions/setup-node
+        with:
+          node-version: ${{ inputs.node-version }}
+          workdir: ${{ inputs.workdir }}
+
+      - name: Run JS tests
+        run: |
+          if [ -f package.json ]; then
+            npm test 2>&1 | tee /tmp/js-tests.log
+          else
+            echo "no package.json — JS tests skipped" | tee /tmp/js-tests.log
+          fi
+
+      - name: Run Python tests
+        run: |
+          if [ -f .colormath/ci.env ]; then set -a; . .colormath/ci.env; set +a; fi
+          poetry run pytest tests/ -q 2>&1 | tee /tmp/py-tests.log
+
+      - name: Gate summary
+        if: always()
+        uses: ./.colormath-lib/.github/actions/gate-summary
+        with:
+          title: "🧪 Tests (JS + Python)"
+          status: ${{ job.status }}
+          log-files: /tmp/py-tests.log
+          stats: |
+            js_pass=$(grep -m1 -oE '[0-9]+ passed' /tmp/js-tests.log 2>/dev/null || echo 'n/a')
+            py_pass=$(grep -m1 -oE '[0-9]+ passed' /tmp/py-tests.log 2>/dev/null || echo 'n/a')
+            py_fail=$(grep -m1 -oE '[0-9]+ failed' /tmp/py-tests.log 2>/dev/null || echo '0 failed')
+            echo "- JS (vitest): ${js_pass}"
+            echo "- Python (pytest): ${py_pass} · ${py_fail}"
+
+  typecheck:
+    name: Typecheck (mypy)
+    if: ${{ inputs.enable-typecheck }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.workdir }}
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v6
+
+      - name: Check out colormath (gate tooling)
+        uses: actions/checkout@v6
+        with:
+          repository: craigmbooth/colormath
+          ref: ${{ inputs.colormath-ref }}
+          path: .colormath-lib
+          sparse-checkout: |
+            scripts
+            .github
+
+      - name: Set up Python + Poetry (cached venv)
+        uses: ./.colormath-lib/.github/actions/setup-python-poetry
+        with:
+          python-version: ${{ inputs.python-version }}
+          workdir: ${{ inputs.workdir }}
+          cache-suffix: mypy
+
+      - name: Install Python dependencies
+        run: poetry install --no-interaction --no-root ${{ inputs.poetry-install-args }}
+
+      - name: Run mypy
+        run: poetry run mypy . 2>&1 | tee /tmp/mypy.log
+
+      - name: Gate summary
+        if: always()
+        uses: ./.colormath-lib/.github/actions/gate-summary
+        with:
+          title: "🔍 Typecheck (mypy)"
+          status: ${{ job.status }}
+          log-files: /tmp/mypy.log
+          stats: |
+            result=$(grep -m1 -oE 'no issues found in [0-9]+ source files|Found [0-9]+ errors? in [0-9]+ files?' /tmp/mypy.log 2>/dev/null || echo 'see log')
+            echo "- Result: ${result}"
+
+  styles:
+    name: CSS Style (stylelint)
+    if: ${{ inputs.enable-styles }}
+    runs-on: ubuntu-latest
+    # Enforces design-token usage in hand-written CSS — fails on hardcoded
+    # colors/font-sizes that should be theme() / var(--token).
+    defaults:
+      run:
+        working-directory: ${{ inputs.workdir }}
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v6
+
+      - name: Check out colormath (gate tooling)
+        uses: actions/checkout@v6
+        with:
+          repository: craigmbooth/colormath
+          ref: ${{ inputs.colormath-ref }}
+          path: .colormath-lib
+          sparse-checkout: |
+            scripts
+            .github
+
+      - name: Set up Node + JS dependencies
+        uses: ./.colormath-lib/.github/actions/setup-node
+        with:
+          node-version: ${{ inputs.node-version }}
+          workdir: ${{ inputs.workdir }}
+
+      - name: Lint CSS for hardcoded design values
+        run: npm run styles 2>&1 | tee /tmp/styles.log
+
+      - name: Gate summary
+        if: always()
+        uses: ./.colormath-lib/.github/actions/gate-summary
+        with:
+          title: "🎨 CSS Style (stylelint)"
+          status: ${{ job.status }}
+          log-files: /tmp/styles.log
+          stats: |
+            problems=$(grep -cE '✖|problem' /tmp/styles.log 2>/dev/null || true)
+            echo "- Problem lines: ${problems:-0}"
+
+  sast:
+    name: Security SAST (bandit)
+    if: ${{ inputs.enable-sast }}
+    runs-on: ubuntu-latest
+    # Bandit is a pure AST scanner — no project deps needed. Scans app source
+    # per [tool.bandit] in the consumer's pyproject, fails on Medium+.
+    defaults:
+      run:
+        working-directory: ${{ inputs.workdir }}
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v6
+
+      - name: Check out colormath (gate tooling)
+        uses: actions/checkout@v6
+        with:
+          repository: craigmbooth/colormath
+          ref: ${{ inputs.colormath-ref }}
+          path: .colormath-lib
+          sparse-checkout: |
+            scripts
+            .github
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: Install bandit
+        run: pip install '${{ inputs.bandit-spec }}'
+
+      - name: Run bandit
+        run: bandit -r . -c pyproject.toml --severity-level medium 2>&1 | tee /tmp/bandit.log
+
+      - name: Gate summary
+        if: always()
+        uses: ./.colormath-lib/.github/actions/gate-summary
+        with:
+          title: "🛡️ Security SAST (bandit)"
+          status: ${{ job.status }}
+          log-files: /tmp/bandit.log
+          tail-lines: "20"
+          stats: |
+            loc=$(grep -m1 -oE 'Total lines of code: [0-9]+' /tmp/bandit.log 2>/dev/null || echo 'LOC n/a')
+            med=$(grep -m1 -oE 'Medium: [0-9]+' /tmp/bandit.log 2>/dev/null || echo 'Medium n/a')
+            high=$(grep -m1 -oE 'High: [0-9]+' /tmp/bandit.log 2>/dev/null || echo 'High n/a')
+            echo "- ${loc}"
+            echo "- Issues — ${med} · ${high} (gate fails on Medium+)"
+
+  secrets:
+    name: Secrets (gitleaks)
+    if: ${{ inputs.enable-secrets }}
+    runs-on: ubuntu-latest
+    # Scans the full commit history for leaked secrets. Allowlisted false
+    # positives live in the consumer's .gitleaks.toml (used when present).
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0  # full history so gitleaks can scan every commit
+
+      - name: Check out colormath (gate tooling)
+        uses: actions/checkout@v6
+        with:
+          repository: craigmbooth/colormath
+          ref: ${{ inputs.colormath-ref }}
+          path: .colormath-lib
+          sparse-checkout: |
+            scripts
+            .github
+
+      - name: Install gitleaks
+        # Pinned binary (no marketplace action, which needs a license for orgs).
+        run: |
+          curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${{ inputs.gitleaks-version }}/gitleaks_${{ inputs.gitleaks-version }}_linux_x64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin gitleaks
+
+      - name: Scan git history for secrets
+        run: |
+          CONFIG_ARGS=()
+          [ -f .gitleaks.toml ] && CONFIG_ARGS=(-c .gitleaks.toml)
+          gitleaks git . ${CONFIG_ARGS[@]+"${CONFIG_ARGS[@]}"} --no-banner --redact 2>&1 | tee /tmp/gitleaks.log
+
+      - name: Gate summary
+        if: always()
+        uses: ./.colormath-lib/.github/actions/gate-summary
+        with:
+          title: "🔑 Secrets (gitleaks)"
+          status: ${{ job.status }}
+          log-files: /tmp/gitleaks.log
+          stats: |
+            verdict=$(grep -m1 -oiE 'no leaks found|leaks found:? *[0-9]*' /tmp/gitleaks.log 2>/dev/null || echo 'see log')
+            commits=$(grep -m1 -oE '[0-9]+ commits scanned' /tmp/gitleaks.log 2>/dev/null || echo 'commits n/a')
+            echo "- Verdict: ${verdict}"
+            echo "- Scope: ${commits} (full history)"
+
+  a11y:
+    name: Accessibility (html-validate)
+    if: ${{ inputs.enable-a11y }}
+    runs-on: ubuntu-latest
+    # Static accessibility lint of the templates (html-validate:a11y preset).
+    defaults:
+      run:
+        working-directory: ${{ inputs.workdir }}
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v6
+
+      - name: Check out colormath (gate tooling)
+        uses: actions/checkout@v6
+        with:
+          repository: craigmbooth/colormath
+          ref: ${{ inputs.colormath-ref }}
+          path: .colormath-lib
+          sparse-checkout: |
+            scripts
+            .github
+
+      - name: Set up Node + JS dependencies
+        uses: ./.colormath-lib/.github/actions/setup-node
+        with:
+          node-version: ${{ inputs.node-version }}
+          workdir: ${{ inputs.workdir }}
+
+      - name: Run html-validate (a11y) on templates
+        run: npm run a11y 2>&1 | tee /tmp/a11y.log
+
+      - name: Gate summary
+        if: always()
+        uses: ./.colormath-lib/.github/actions/gate-summary
+        with:
+          title: "♿ Accessibility (html-validate)"
+          status: ${{ job.status }}
+          log-files: /tmp/a11y.log
+          stats: |
+            templates=$(find templates -name '*.html' 2>/dev/null | wc -l | tr -d ' ')
+            errors=$(grep -m1 -oE '[0-9]+ errors?' /tmp/a11y.log 2>/dev/null || echo '0 errors')
+            echo "- Templates scanned: ${templates}"
+            echo "- Findings: ${errors} (a11y preset)"
+
+  deps:
+    name: Dependency CVEs (pip-audit)
+    if: ${{ inputs.enable-deps }}
+    runs-on: ubuntu-latest
+    # Audits the locked, DEPLOYED dependencies against the CVE databases.
+    # Groups + allowlist come from the consumer's .colormath/audit.conf.
+    defaults:
+      run:
+        working-directory: ${{ inputs.workdir }}
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v6
+
+      - name: Check out colormath (gate tooling)
+        uses: actions/checkout@v6
+        with:
+          repository: craigmbooth/colormath
+          ref: ${{ inputs.colormath-ref }}
+          path: .colormath-lib
+          sparse-checkout: |
+            scripts
+            .github
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: Install Poetry + export plugin + pip-audit
+        run: |
+          pipx install poetry==2.1.4
+          poetry self add poetry-plugin-export
+          pip install pip-audit
+
+      - name: Audit locked dependencies for CVEs
+        run: |
+          "$GITHUB_WORKSPACE/.colormath-lib/scripts/audit-deps.sh" 2>&1 | tee /tmp/audit.log
+
+      - name: Gate summary
+        if: always()
+        uses: ./.colormath-lib/.github/actions/gate-summary
+        with:
+          title: "📦 Dependency CVEs (pip-audit)"
+          status: ${{ job.status }}
+          log-files: /tmp/audit.log
+          tail-lines: "20"
+          stats: |
+            verdict=$(grep -m1 -oE 'No known vulnerabilities found|Found [0-9]+ known vulnerabilit[a-z]*' /tmp/audit.log 2>/dev/null || echo 'see log')
+            echo "- Verdict: ${verdict}"
+
+  diff-coverage:
+    name: Diff coverage (diff-cover)
+    if: ${{ inputs.enable-diff-coverage }}
+    runs-on: ubuntu-latest
+    # Requires lines CHANGED vs the base branch to be covered — the per-change
+    # upgrade of a repo-wide --cov-fail-under. Never fails on pre-existing
+    # untested code, only on new/changed lines that lack tests.
+    defaults:
+      run:
+        working-directory: ${{ inputs.workdir }}
+    steps:
+      - name: Free up disk space
+        if: ${{ inputs.free-disk-space }}
+        working-directory: .
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost "$AGENT_TOOLSDIRECTORY"
+          sudo apt-get clean
+
+      - name: Check out code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0  # diff-cover needs full history + the base branch
+
+      - name: Check out colormath (gate tooling)
+        uses: actions/checkout@v6
+        with:
+          repository: craigmbooth/colormath
+          ref: ${{ inputs.colormath-ref }}
+          path: .colormath-lib
+          sparse-checkout: |
+            scripts
+            .github
+
+      - name: Set up Python + Poetry (cached venv)
+        uses: ./.colormath-lib/.github/actions/setup-python-poetry
+        with:
+          python-version: ${{ inputs.python-version }}
+          workdir: ${{ inputs.workdir }}
+          cache-suffix: tests
+
+      - name: Install Python dependencies + diff-cover
+        run: |
+          poetry install --no-interaction --no-root ${{ inputs.poetry-install-args }}
+          pip install diff-cover
+
+      - name: Run consumer extra-install hook
+        run: |
+          if [ -x .colormath/ci-extra-install.sh ]; then
+            ./.colormath/ci-extra-install.sh
+          fi
+
+      - name: Ensure base branch ref is available
+        run: git fetch --no-tags origin "$DEFAULT_BRANCH"
+
+      - name: Check diff coverage (changed lines vs base branch)
+        env:
+          DIFF_COVER_BASE: origin/${{ env.DEFAULT_BRANCH }}
+          DIFF_COVER_FAIL_UNDER: ${{ inputs.diff-cover-fail-under }}
+        run: |
+          if [ -f .colormath/ci.env ]; then set -a; . .colormath/ci.env; set +a; fi
+          "$GITHUB_WORKSPACE/.colormath-lib/scripts/diff-coverage.sh" 2>&1 | tee /tmp/diffcov.log
+
+      - name: Gate summary
+        if: always()
+        uses: ./.colormath-lib/.github/actions/gate-summary
+        with:
+          title: "📈 Diff coverage (diff-cover)"
+          status: ${{ job.status }}
+          log-files: /tmp/diffcov.log
+          tail-lines: "20"
+          stats: |
+            cov=$(grep -m1 -oE 'Coverage: [0-9.]+%' /tmp/diffcov.log 2>/dev/null || echo 'Coverage n/a')
+            missing=$(grep -m1 -oE 'Missing:[[:space:]]+[0-9]+ lines' /tmp/diffcov.log 2>/dev/null || echo 'Missing n/a')
+            echo "- ${cov} of changed lines (threshold ≥${{ inputs.diff-cover-fail-under }}%)"
+            echo "- ${missing} uncovered"

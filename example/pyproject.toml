@@ -1,0 +1,37 @@
+[project]
+name = "colormath-example"
+version = "0.1.0"
+description = "Minimal app of the PorticoFoundry archetype; the colormath gates run against it in CI"
+requires-python = ">=3.12,<4.0"
+dependencies = [
+    "fastapi (>=0.115,<1.0)",
+    "jinja2 (>=3.1,<4.0)",
+]
+
+[tool.poetry]
+package-mode = false
+
+[tool.poetry.group.dev.dependencies]
+pytest = ">=8.0,<9"
+pytest-cov = ">=6.0,<8"
+httpx = ">=0.27,<1.0"
+mypy = ">=1.13,<2"
+ruff = ">=0.14,<0.15"
+
+[tool.ruff]
+target-version = "py312"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+exclude = ["\\.venv"]
+
+[tool.bandit]
+exclude_dirs = ["tests", ".venv", "node_modules"]
+
+[tool.coverage.run]
+omit = ["tests/*"]
+
+[build-system]
+requires = ["poetry-core>=2.0"]
+build-backend = "poetry.core.masonry.api"

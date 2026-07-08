@@ -1,0 +1,19 @@
+{
+  "plugins": ["stylelint-declaration-strict-value"],
+  "rules": {
+    "scale-unlimited/declaration-strict-value": [
+      ["/color$/", "fill", "stroke", "font-size"],
+      {
+        "ignoreKeywords": [
+          "currentColor",
+          "transparent",
+          "inherit",
+          "initial",
+          "unset",
+          "none"
+        ],
+        "message": "Use a design token — theme('...') or var(--token) — instead of a hardcoded ${type} for \"${property}\""
+      }
+    ]
+  }
+}
