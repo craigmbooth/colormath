@@ -9,7 +9,7 @@ inputs:
     description: Heading for the block, e.g. "🧪 Tests (JS + Python)"
     required: true
   status:
-    description: Pass `${{ job.status }}`
+    description: The calling job's status (pass the job.status context)
     required: true
   log-files:
     description: Space-separated log paths to tail into the details block
