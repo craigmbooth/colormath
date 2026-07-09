@@ -1,60 +1,22 @@
 # colormath
 
-Shared infrastructure for the PorticoFoundry app archetype (FastAPI + Poetry +
-Tailwind/Alpine + Jinja + Postgres/Redis + GCP Cloud Run). One repo, one
-version stream, four distribution channels — each artifact class rides the
-mechanism with the smallest merge surface:
+[![CI](https://github.com/ColorMath/ci/actions/workflows/ci.yml/badge.svg)](https://github.com/ColorMath/ci/actions/workflows/ci.yml)
 
-| Channel | What | How consumers use it |
-|---|---|---|
-| **A: CI gates** | 9-gate reusable workflow + composite actions + gate scripts | `uses: ColorMath/ci/.github/workflows/gates.yml@vX.Y.Z` |
-| **B: in-repo files** | Dockerfile, Makefiles, compose, deploy.sh, … *(planned)* | Copier template; `copier update` 3-way-merges |
-| **C: Terraform** | Cloud Run / database / redis / WIF modules *(planned)* | `source = "git::https://github.com/ColorMath/ci.git//terraform/modules/<name>?ref=vX.Y.Z"` |
-| **D: agent harness** | Portable Claude Code skills/commands *(planned)* | Plugin marketplace |
+**Nine CI quality gates for Python web apps, in one `uses:` line.**
 
-colormath ships **no runtime application code** — that's the lesson of its
-predecessor (portico, which ended up vendored and forked). Infra only.
+colormath is a reusable GitHub Actions workflow (plus the scripts and composite
+actions behind it) that gives a Poetry-managed Python project a complete,
+parallel CI gate suite: formatting, lint, types, tests, security, secrets,
+accessibility, dependency CVEs, and per-change test coverage.
 
-## The 10-second rule
+It grew out of a family of FastAPI + Poetry + Jinja/Tailwind apps deployed on
+Cloud Run, but the gates apply to most Poetry projects — the JS-based gates
+(frontend tests, CSS lint, template accessibility) are driven by npm scripts
+you define, and any gate can be switched off.
 
-> Would a sibling repo copy this file unmodified except for names/ports/IDs?
-> → colormath. Does it mention the *domain* (careers, factbase, intents, LLM
-> vendor)? → project. Does it need more than ~3 template variables to serve
-> every project? → it's a product decision wearing a costume; keep it in the
-> project.
+## Quick start
 
-## Versioning
-
-Single SemVer tag stream, **exact-tag pins only** (never a floating major
-tag): upgrades must arrive as a reviewable PR, not as a surprise inside an
-unrelated one. The rule for MAJOR: *if a consumer's CI, deploy, or `terraform
-plan` can go from green to red without the consumer editing anything, it's
-MAJOR.* Details in [LIFECYCLE.md](LIFECYCLE.md). While on `0.x`, breaking
-changes may land in any release.
-
-## The gates
-
-Nine parallel CI gates (each maps to a local `make` target in consumers):
-
-| Gate | Tool | Enforces |
-|---|---|---|
-| `ruff` | ruff | formatting + lint |
-| `tests` | vitest + pytest | JS and Python suites green |
-| `typecheck` | mypy | type checks pass |
-| `styles` | stylelint | design tokens only — no hardcoded colors/font-sizes |
-| `sast` | bandit | no Medium+ security findings in app source |
-| `secrets` | gitleaks | no secrets anywhere in git history |
-| `a11y` | html-validate | templates pass the a11y preset |
-| `deps` | pip-audit | locked, shipped deps have no actionable CVEs |
-| `diff-coverage` | diff-cover | changed lines ≥90% covered |
-
-Every gate has an `enable-<gate>` input (default `true`) so a consumer can
-adopt incrementally: disable, burn down findings, enable. Disabled gates show
-as *skipped* — visible, never silently absent.
-
-## Adopting the gates in a product
-
-### 1. Replace your `gates.yml` (or `ci.yml`) with a caller
+Create `.github/workflows/gates.yml` in your repo:
 
 ```yaml
 name: Gates
@@ -75,11 +37,11 @@ jobs:
     with:
       python-version: "3.12"
       default-branch: main
-      poetry-install-args: "--with webapp,worker"
 ```
 
-Project-specific jobs (deploy-staging, seeding, previews) stay in your repo as
-siblings that gate on the suite:
+Open a pull request and you'll get nine parallel checks, each posting a
+compact stats block to the run summary. Project-specific jobs (deploys,
+previews, seeding) stay in your repo as siblings that gate on the suite:
 
 ```yaml
   deploy-staging:
@@ -88,59 +50,141 @@ siblings that gate on the suite:
     # ... your deploy steps, unchanged
 ```
 
-### 2. Satisfy the consumer-side contract
+The [example/](example/) directory is a minimal compliant consumer — start
+there to see every contract file in place. colormath's own CI runs the full
+suite against it on every PR.
 
-| File | Purpose |
-|---|---|
-| `.colormath/audit.conf` | pip-audit groups + CVE allowlist (see `example/.colormath/audit.conf`) |
-| `.colormath/ci.env` | non-secret env sourced before pytest in CI (optional) |
-| `.colormath/ci-extra-install.sh` | extra install steps after `poetry install` (optional, executable) |
-| `.gitleaks.toml` | gitleaks allowlist (optional; used when present) |
-| `pyproject.toml` | needs `[tool.bandit]` (and your mypy/ruff config as usual) |
-| `package.json` | npm scripts `test`, `styles`, `a11y` (see `example/package.json`) |
+## The gates
 
-The [example/](example/) app is the reference implementation of this contract
-— colormath's own CI runs the full suite against it on every PR.
+| Gate | Tool | Enforces |
+|---|---|---|
+| `ruff` | [ruff](https://docs.astral.sh/ruff/) | formatting + lint |
+| `tests` | vitest + pytest | JS and Python suites green |
+| `typecheck` | [mypy](https://mypy-lang.org/) | type checks pass |
+| `styles` | [stylelint](https://stylelint.io/) | design tokens only — no hardcoded colors/font-sizes |
+| `sast` | [bandit](https://bandit.readthedocs.io/) | no Medium+ security findings in app source |
+| `secrets` | [gitleaks](https://github.com/gitleaks/gitleaks) | no secrets anywhere in git history |
+| `a11y` | [html-validate](https://html-validate.org/) | templates pass the a11y preset |
+| `deps` | [pip-audit](https://pypi.org/project/pip-audit/) | locked, shipped deps have no actionable CVEs |
+| `diff-coverage` | [diff-cover](https://github.com/Bachmann1234/diff_cover) | changed lines ≥90% covered |
 
-### 3. Per-product notes
+Two design choices worth calling out:
 
-- **talas** (canary — adopt first): `default-branch: main`. Delete
-  `scripts/diff-coverage.sh` and `scripts/audit-deps.sh` after moving their
-  poetry groups + CVE allowlist into `.colormath/audit.conf`; keep your
-  Makefile targets pointing at the same contract. Move the inline
-  `deploy-staging` job to a sibling `needs: gates` job.
-- **intendent**: `default-branch: master`, `python-version: "3.13"`,
-  `free-disk-space: true` (heavy ML tree), `ruff-select: "I"` (imports-only
-  lint, until full lint is burned down), and port the pip hack from the tests
-  job into `.colormath/ci-extra-install.sh`. Move the starlette/torch CVE
-  allowlist (with justifications) into `.colormath/audit.conf`.
-- **runwayz**: replace the older `ci.yml` wholesale. Expect red on gates it
-  never ran — land the caller with `enable-a11y: false`, `enable-deps: false`,
-  `enable-diff-coverage: false`, `enable-styles: false`, then burn down and
-  enable gate by gate. Add the `styles`/`a11y` npm scripts (copy from
-  `example/package.json`).
+- **`diff-coverage`, not total coverage.** The gate requires the lines you
+  *changed* to be covered. It never fails on pre-existing untested code, so
+  you can adopt it on day one of a legacy codebase and ratchet quality up one
+  PR at a time.
+- **`deps` audits what ships.** Locked versions are exported from
+  `poetry.lock` for the production dependency groups only — dev tooling never
+  triggers a CVE failure, and local runs audit exactly what CI audits.
 
-### 4. Update branch protection
+## Adopting incrementally
 
-Point required status checks at the new job names (`ruff`, `tests`,
-`typecheck`, `styles`, `sast`, `secrets`, `a11y`, `deps`, `diff-coverage`).
+Every gate has an `enable-<gate>` input (default `true`). On a codebase with
+existing findings, land the caller with the failing gates disabled, burn the
+findings down, and enable them one by one:
 
-## Repo layout
+```yaml
+    uses: ColorMath/ci/.github/workflows/gates.yml@v0.1.1
+    with:
+      python-version: "3.12"
+      default-branch: main
+      enable-a11y: false           # TODO: burn down template findings
+      enable-diff-coverage: false  # TODO: enable once the suite measures coverage
+```
+
+Disabled gates show as *skipped* in the run — visible, never silently absent.
+
+## Configuration
+
+### Workflow inputs
+
+All inputs are optional.
+
+| Input | Default | Purpose |
+|---|---|---|
+| `python-version` | `"3.12"` | Python for all Python gates |
+| `node-version` | `"22"` | Node for all JS gates (html-validate 11.x needs ≥22) |
+| `default-branch` | repo default | Base branch for diff-coverage |
+| `workdir` | `"."` | Directory containing the app, for monorepos |
+| `poetry-install-args` | `""` | Extra `poetry install` args, e.g. `"--with webapp,worker"` |
+| `ruff-spec` | `"ruff>=0.14,<0.15"` | pip spec for ruff — match your pyproject pin |
+| `ruff-select` | `""` (full lint) | Restrict `ruff check` to specific rules, e.g. `"I"` |
+| `bandit-spec` | `"bandit>=1.9,<2"` | pip spec for bandit — match your pyproject pin |
+| `gitleaks-version` | `"8.30.1"` | gitleaks release to install |
+| `diff-cover-fail-under` | `"90"` | Minimum % coverage on changed lines |
+| `free-disk-space` | `false` | Reclaim runner disk first (heavy ML dependency trees) |
+| `enable-<gate>` | `true` | Per-gate opt-out (see above) |
+
+### Files in your repo
+
+| File | Needed for | Purpose |
+|---|---|---|
+| `pyproject.toml` with `[tool.bandit]` | `sast` | scan scope/excludes (plus your mypy/ruff config as usual) |
+| `.colormath/audit.conf` | `deps` | poetry groups that ship + CVE allowlist ([reference](example/.colormath/audit.conf)) |
+| npm scripts `test`, `styles`, `a11y` | the JS gates | see [example/package.json](example/package.json) |
+| `.colormath/ci.env` | optional | non-secret env sourced before pytest in CI |
+| `.colormath/ci-extra-install.sh` | optional | extra install steps after `poetry install` (must be executable) |
+| `.gitleaks.toml` | optional | gitleaks false-positive allowlist, used when present |
+
+Once the checks are green, register each gate's job name as a required status
+check in your branch protection (they appear as `gates / Ruff (format + lint)`
+and so on).
+
+## Running the gates locally
+
+Most gates are one-liners you can mirror as Makefile targets (`ruff format
+--check .`, `poetry run mypy .`, `npm run a11y`, …). The two gates with real
+logic — `deps` and `diff-coverage` — live in [scripts/](scripts/) so local
+runs and CI share one implementation. Don't copy them into your repo; fetch
+them at the tag you pin:
+
+```make
+COLORMATH_REF = v0.1.1  # keep in lockstep with the pin in gates.yml
+
+audit:
+	curl -fsSL https://raw.githubusercontent.com/ColorMath/ci/$(COLORMATH_REF)/scripts/audit-deps.sh | bash
+
+coverage-diff:
+	curl -fsSL https://raw.githubusercontent.com/ColorMath/ci/$(COLORMATH_REF)/scripts/diff-coverage.sh | bash
+```
+
+## Versioning and upgrades
+
+One SemVer tag stream, and consumers pin **exact tags only** (`@v0.1.1`, never
+a floating major tag): an upgrade should arrive as a reviewable PR whose diff
+and changelog explain themselves — not as a surprise inside an unrelated one.
+
+The rule for MAJOR: *if a consumer's CI can go from green to red without the
+consumer editing anything, it's MAJOR.* New gates ship disabled-by-default in
+a MINOR and are promoted to default-on in the next MAJOR. Details in
+[LIFECYCLE.md](LIFECYCLE.md); release history in [CHANGELOG.md](CHANGELOG.md).
+While on `0.x`, breaking changes may land in any release.
+
+## What's in this repo
 
 ```
 .github/workflows/gates.yml    # the reusable gate suite (workflow_call)
 .github/workflows/ci.yml       # self-test: runs the suite against example/
 .github/actions/               # setup-python-poetry, setup-node, gate-summary
-scripts/                       # gate scripts fetched by the workflow at its own ref
+scripts/                       # gate scripts, fetched by the workflow at its own ref
 example/                       # minimal compliant consumer + contract reference
+docs/                          # adoption notes for the maintainer's own products
 ```
 
-Planned (see the migration plan): `template/` (Copier), `terraform/modules/`,
-`plugin/` (Claude Code marketplace).
+Planned next, on the same tag stream and exact-pin rule: a Copier template for
+the in-repo files this stack shares (Dockerfile, Makefile, compose), Terraform
+modules for the Cloud Run deployment shape, and a Claude Code plugin.
 
-## Public-repo hygiene
+## Design principle
 
-This repo is public so private consumers under different GitHub owners can use
-every channel without auth friction. Consequences: **never commit real project
-IDs, tfvars values, or secrets** — the gitleaks gate runs on colormath itself,
-and example values must stay obviously fake.
+colormath ships **no runtime application code** — infrastructure only. The
+10-second rule for what belongs here: would a sibling project copy this file
+unmodified except for names, ports, and IDs? Then it belongs in colormath.
+Does it mention a specific domain, or need more than ~3 template variables to
+fit every project? Then it's a product decision wearing a costume; keep it in
+your repo.
+
+This repo is public so consumers under any GitHub owner can use every channel
+without auth friction. Never commit real project IDs or secrets — the gitleaks
+gate runs on colormath itself, and example values must stay obviously fake.
