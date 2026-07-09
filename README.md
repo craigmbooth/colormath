@@ -199,3 +199,7 @@ your repo.
 This repo is public so consumers under any GitHub owner can use every channel
 without auth friction. Never commit real project IDs or secrets — the gitleaks
 gate runs on colormath itself, and example values must stay obviously fake.
+
+## License
+
+[MIT](LICENSE)
