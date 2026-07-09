@@ -4,7 +4,7 @@ Working notes for migrating the maintainer's own products onto the gates
 channel. Adoption order is always talas (canary) → intendent → runwayz
 (see [LIFECYCLE.md](../LIFECYCLE.md)).
 
-## talas — done (talas-app/talas#63, @v0.2.1; no review workflow or plugin yet — both opt-in)
+## talas — done (talas-app/talas#63, @v0.4.0; plugin enabled via .claude/settings.json, no review workflow yet)
 
 `default-branch: main`, `poetry-install-args: "--with webapp,worker"`,
 `ruff-spec` matching pyproject's `^0.14.8` pin. `scripts/diff-coverage.sh` and
