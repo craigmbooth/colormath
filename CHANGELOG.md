@@ -5,6 +5,28 @@ one SemVer stream, exact-tag pins, MAJOR = anything that can turn a consumer's
 green CI red without the consumer editing anything. While on `0.x`, breaking
 changes may land in any release.
 
+## v0.4.0 — 2026-07-09
+
+MINOR: new opt-in artifact — the plugin channel (channel D) opens.
+
+### Added
+
+- **Claude Code plugin marketplace** (`.claude-plugin/marketplace.json`) and
+  the **`colormath` plugin** (`plugin/`), extracted from intendent's local
+  `.claude/skills/`. First skill: **`/colormath:ship`** — take the current
+  branch through the PR pipeline (open PR, watch the `gates / *` checks,
+  wait for the Thermonuclear Review / formal reviews, triage SMALL vs LARGE,
+  apply small fixes with an Addressed/Not-changed response comment) and stop
+  at a merge recommendation, never merging. Generalized from the intendent
+  version: default-branch-agnostic, detects whether the repo runs the
+  colormath review workflow (skips the review wait when absent), and drops
+  `--required` from the gate watch (repos without branch protection get
+  "no required checks" + exit 1 from gh).
+  - Install: `/plugin marketplace add ColorMath/ci` then
+    `/plugin install colormath@colormath`, or per-repo via
+    `extraKnownMarketplaces`/`enabledPlugins` in `.claude/settings.json`
+    (example in the README).
+
 ## v0.3.0 — 2026-07-09
 
 MINOR: new opt-in artifact; existing consumers are unaffected until they add

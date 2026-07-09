@@ -33,7 +33,7 @@ concurrency:
 
 jobs:
   gates:
-    uses: ColorMath/ci/.github/workflows/gates.yml@v0.3.0
+    uses: ColorMath/ci/.github/workflows/gates.yml@v0.4.0
     with:
       python-version: "3.12"
       default-branch: main
@@ -85,7 +85,7 @@ existing findings, land the caller with the failing gates disabled, burn the
 findings down, and enable them one by one:
 
 ```yaml
-    uses: ColorMath/ci/.github/workflows/gates.yml@v0.3.0
+    uses: ColorMath/ci/.github/workflows/gates.yml@v0.4.0
     with:
       python-version: "3.12"
       default-branch: main
@@ -160,7 +160,7 @@ on:
 
 jobs:
   review:
-    uses: ColorMath/ci/.github/workflows/review.yml@v0.3.0
+    uses: ColorMath/ci/.github/workflows/review.yml@v0.4.0
     permissions:
       contents: read
       pull-requests: write
@@ -176,13 +176,45 @@ Inputs: `model` (default `claude-sonnet-4-6`), `review-focus` (extra
 project-specific emphasis for the reviewer), and `enable-review` /
 `enable-test-plan` toggles. Requires an `ANTHROPIC_API_KEY` repo secret.
 
+## Optional: Claude Code plugin
+
+This repo is also a [Claude Code plugin marketplace](https://code.claude.com/docs/en/plugin-marketplaces).
+The `colormath` plugin ships skills for working in consumer repos — currently
+**`/colormath:ship`**: take the current branch through the whole PR pipeline
+(open the PR, watch the gates, wait for the Thermonuclear Review, triage
+findings, apply small fixes) and stop at a merge recommendation — never
+merging itself.
+
+Install manually:
+
+```
+/plugin marketplace add ColorMath/ci
+/plugin install colormath@colormath
+```
+
+or have a consumer repo offer it to everyone who opens it, via
+`.claude/settings.json`:
+
+```json
+{
+  "extraKnownMarketplaces": {
+    "colormath": {
+      "source": { "source": "github", "repo": "ColorMath/ci" }
+    }
+  },
+  "enabledPlugins": {
+    "colormath@colormath": true
+  }
+}
+```
+
 ## Running the gates locally
 
 [Makefile.colormath](Makefile.colormath) defines a local mirror of every gate,
 so all consumers share the same `make` endpoints. Vendor it once:
 
 ```sh
-curl -fsSLO https://raw.githubusercontent.com/ColorMath/ci/v0.3.0/Makefile.colormath
+curl -fsSLO https://raw.githubusercontent.com/ColorMath/ci/v0.4.0/Makefile.colormath
 ```
 
 then include it from your Makefile, providing the one target it expects from
@@ -206,7 +238,7 @@ diff like any other dependency bump.
 
 ## Versioning and upgrades
 
-One SemVer tag stream, and consumers pin **exact tags only** (`@v0.3.0`, never
+One SemVer tag stream, and consumers pin **exact tags only** (`@v0.4.0`, never
 a floating major tag): an upgrade should arrive as a reviewable PR whose diff
 and changelog explain themselves — not as a surprise inside an unrelated one.
 
@@ -223,6 +255,8 @@ While on `0.x`, breaking changes may land in any release.
 .github/workflows/review.yml   # optional reusable AI review + test-plan suite
 .github/workflows/ci.yml       # self-test: runs the suite against example/
 .github/actions/               # setup-python-poetry, setup-node, gate-summary
+.claude-plugin/                # plugin marketplace manifest
+plugin/                        # the colormath Claude Code plugin (skills)
 Makefile.colormath             # shared local gate targets — vendored by consumers
 scripts/                       # gate scripts, fetched by the workflow at its own ref
 example/                       # minimal compliant consumer + contract reference
@@ -230,8 +264,8 @@ docs/                          # adoption notes for the maintainer's own product
 ```
 
 Planned next, on the same tag stream and exact-pin rule: a Copier template for
-the in-repo files this stack shares (Dockerfile, Makefile, compose), Terraform
-modules for the Cloud Run deployment shape, and a Claude Code plugin.
+the in-repo files this stack shares (Dockerfile, Makefile, compose), and
+Terraform modules for the Cloud Run deployment shape.
 
 ## Design principle
 

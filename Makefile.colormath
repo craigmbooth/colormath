@@ -16,7 +16,7 @@
 #     pyproject.toml, npm scripts `styles`/`a11y`, optional .gitleaks.toml
 # ----------------------------------------------------------------------------
 
-COLORMATH_REF = v0.3.0
+COLORMATH_REF = v0.4.0
 COLORMATH_RAW = https://raw.githubusercontent.com/ColorMath/ci/$(COLORMATH_REF)
 
 # Overridable knobs — set before the include if your project differs.
