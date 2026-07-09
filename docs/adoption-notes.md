@@ -4,7 +4,7 @@ Working notes for migrating the maintainer's own products onto the gates
 channel. Adoption order is always talas (canary) → intendent → runwayz
 (see [LIFECYCLE.md](../LIFECYCLE.md)).
 
-## talas — done (talas-app/talas#63, @v0.1.1)
+## talas — done (talas-app/talas#63, @v0.2.0)
 
 `default-branch: main`, `poetry-install-args: "--with webapp,worker"`,
 `ruff-spec` matching pyproject's `^0.14.8` pin. `scripts/diff-coverage.sh` and
@@ -13,11 +13,15 @@ channel. Adoption order is always talas (canary) → intendent → runwayz
 fake-`VERTEX_PROJECT_ID`-into-`.env` hack to `.colormath/ci-extra-install.sh`
 (it must stay a `.env`-file write, not an env var — the config unit tests
 construct `Settings` with `_env_file=None` and must not see it). The inline
-`deploy-staging` job became a sibling `needs: gates` job. `make audit` /
-`coverage-diff` fetch the shared scripts at the `COLORMATH_REF` pinned in the
-Makefile. No branch protection to update (private repo, free plan).
+`deploy-staging` job became a sibling `needs: gates` job. The local gate
+mirrors come from a vendored `Makefile.colormath` (repo Makefile just
+`include`s it and defines `test`). No branch protection to update (private
+repo, free plan).
 
 ## intendent — next
+
+- Vendor `Makefile.colormath`; set `COLORMATH_RUFF_CHECK_ARGS = --select I` and
+  `COLORMATH_DIFF_COVER_BASE = origin/master` before the include
 
 - `default-branch: master`, `python-version: "3.13"`
 - `free-disk-space: true` (heavy ML tree)
