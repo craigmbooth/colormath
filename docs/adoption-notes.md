@@ -38,3 +38,8 @@ repo, free plan).
   enable gate by gate.
 - Add the `styles`/`a11y` npm scripts (copy from
   [example/package.json](../example/package.json)).
+- Once on ≥v0.5.0, fold the carried-over `docstrings` sibling job into the
+  suite: set `enable-docstrings: true` and either
+  `interrogate-paths: "core/ models/ routes/ services/ adapters/ schemas/ scripts/ jobs/"`
+  or scan `.` and move the scope into `[tool.interrogate]` excludes. The
+  `build-css` sibling job stays project-side — colormath has no gate for it.

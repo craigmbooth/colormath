@@ -5,6 +5,26 @@ one SemVer stream, exact-tag pins, MAJOR = anything that can turn a consumer's
 green CI red without the consumer editing anything. While on `0.x`, breaking
 changes may land in any release.
 
+## v0.5.0 — 2026-07-09
+
+MINOR: new gate, shipped **opt-in** per the new-gate rollout rule — existing
+consumers see a skipped `docstrings` job until they set
+`enable-docstrings: true`; promotion to default-on comes with the next MAJOR.
+
+### Added
+
+- **`docstrings` gate** (interrogate): docstring-coverage check, promoted
+  from runwayz's project-specific sibling job. Pure AST scan, no project
+  deps; threshold and scope come from `[tool.interrogate]` in the consumer's
+  pyproject. New inputs: `interrogate-spec` (`"interrogate>=1.7,<2"`),
+  `interrogate-paths` (`"."`, scoped by the pyproject excludes), and
+  `enable-docstrings` (**default `false`**).
+- `Makefile.colormath`: `docstrings` target with
+  `COLORMATH_INTERROGATE_SPEC` / `COLORMATH_INTERROGATE_PATHS` knobs. Not in
+  `preflight` while the CI gate is opt-in.
+- `example/`: `[tool.interrogate]` (fail-under 100) and full docstring
+  coverage; colormath's self-test runs with `enable-docstrings: true`.
+
 ## v0.4.0 — 2026-07-09
 
 MINOR: new opt-in artifact — the plugin channel (channel D) opens.

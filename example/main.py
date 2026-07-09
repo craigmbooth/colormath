@@ -26,6 +26,7 @@ def greeting(name: str) -> str:
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request) -> HTMLResponse:
+    """Render the index page."""
     return templates.TemplateResponse(
         request=request,
         name="index.html",

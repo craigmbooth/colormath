@@ -16,16 +16,18 @@
 #     pyproject.toml, npm scripts `styles`/`a11y`, optional .gitleaks.toml
 # ----------------------------------------------------------------------------
 
-COLORMATH_REF = v0.4.0
+COLORMATH_REF = v0.5.0
 COLORMATH_RAW = https://raw.githubusercontent.com/ColorMath/ci/$(COLORMATH_REF)
 
 # Overridable knobs — set before the include if your project differs.
 COLORMATH_BANDIT_SPEC ?= bandit>=1.9,<2
+COLORMATH_INTERROGATE_SPEC ?= interrogate>=1.7,<2
+COLORMATH_INTERROGATE_PATHS ?= .      # space-separated; scoped by [tool.interrogate] excludes
 COLORMATH_RUFF_CHECK_ARGS ?=      # e.g. "--select I" for imports-only lint
 COLORMATH_DIFF_COVER_BASE ?=      # e.g. origin/master; empty = script default
 COLORMATH_DIFF_COVER_FAIL_UNDER ?=  # e.g. 80; empty = script default (90)
 
-.PHONY: format-check lint typecheck styles sast secrets a11y audit \
+.PHONY: format-check lint typecheck docstrings styles sast secrets a11y audit \
 	coverage-diff preflight colormath-update
 
 format-check: ## Gate: ruff formatting is clean
@@ -36,6 +38,12 @@ lint: ## Gate: ruff lint passes
 
 typecheck: ## Gate: mypy type check passes
 	poetry run mypy .
+
+# Not in preflight while the CI gate is opt-in (enable-docstrings defaults to
+# false until the next MAJOR) — run it directly; it joins preflight when the
+# gate becomes default-on.
+docstrings: ## Gate: interrogate docstring coverage ([tool.interrogate] in pyproject)
+	poetry run pip install '$(COLORMATH_INTERROGATE_SPEC)' >/dev/null && poetry run interrogate $(COLORMATH_INTERROGATE_PATHS)
 
 styles: ## Gate: CSS uses design tokens (no hardcoded colors/font-sizes)
 	npm run styles

@@ -29,6 +29,11 @@ exclude = ["\\.venv"]
 [tool.bandit]
 exclude_dirs = ["tests", ".venv", "node_modules"]
 
+[tool.interrogate]
+fail-under = 100
+exclude = ["tests", ".venv", "node_modules"]
+verbose = 1
+
 [tool.coverage.run]
 omit = ["tests/*"]
 

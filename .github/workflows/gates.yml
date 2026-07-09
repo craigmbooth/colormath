@@ -12,10 +12,11 @@ name: Gates
 #         python-version: "3.12"
 #         default-branch: main
 #
-# Nine parallel gates: ruff, tests (JS + Python), typecheck (mypy),
-# styles (stylelint), sast (bandit), secrets (gitleaks), a11y (html-validate),
-# deps (pip-audit), diff-coverage (diff-cover). Register each gate's job name
-# as a required status check in the consumer's branch ruleset.
+# Ten parallel gates: ruff, tests (JS + Python), typecheck (mypy),
+# docstrings (interrogate; opt-in until the next MAJOR), styles (stylelint),
+# sast (bandit), secrets (gitleaks), a11y (html-validate), deps (pip-audit),
+# diff-coverage (diff-cover). Register each gate's job name as a required
+# status check in the consumer's branch ruleset.
 #
 # Per-gate `enable-*` inputs exist so a consumer can adopt incrementally
 # (turn a gate off, burn down its findings, turn it on). A disabled gate shows
@@ -27,6 +28,7 @@ name: Gates
 #   .colormath/ci.env       env sourced before pytest runs (test secrets/config)
 #   .gitleaks.toml          gitleaks allowlist (used when present)
 #   [tool.bandit]           in pyproject.toml (bandit scan scope/excludes)
+#   [tool.interrogate]      in pyproject.toml (docstring threshold/excludes)
 #   npm scripts             "test" (vitest), "styles" (stylelint),
 #                           "a11y" (html-validate) — JS gates need them
 #
@@ -61,7 +63,7 @@ on:
       colormath-ref:
         description: colormath ref to fetch gate scripts from (stamped per release; do not set as a consumer)
         type: string
-        default: "v0.4.0"
+        default: "v0.5.0"
       ruff-spec:
         description: pip requirement spec for ruff (match your pyproject dev pin)
         type: string
@@ -74,6 +76,14 @@ on:
         description: pip requirement spec for bandit (match your pyproject dev pin)
         type: string
         default: "bandit>=1.9,<2"
+      interrogate-spec:
+        description: pip requirement spec for interrogate (match your pyproject dev pin)
+        type: string
+        default: "interrogate>=1.7,<2"
+      interrogate-paths:
+        description: Space-separated paths for interrogate to scan; "." scans the whole workdir, scoped by [tool.interrogate] excludes
+        type: string
+        default: "."
       gitleaks-version:
         description: gitleaks release to install
         type: string
@@ -95,6 +105,10 @@ on:
       enable-typecheck:
         type: boolean
         default: true
+      # Opt-in while new (LIFECYCLE new-gate rollout); default-on at the next MAJOR.
+      enable-docstrings:
+        type: boolean
+        default: false
       enable-styles:
         type: boolean
         default: true
@@ -295,6 +309,53 @@ jobs:
           stats: |
             result=$(grep -m1 -oE 'no issues found in [0-9]+ source files|Found [0-9]+ errors? in [0-9]+ files?' /tmp/mypy.log 2>/dev/null || echo 'see log')
             echo "- Result: ${result}"
+
+  docstrings:
+    name: Docstrings (interrogate)
+    if: ${{ inputs.enable-docstrings }}
+    runs-on: ubuntu-latest
+    # interrogate is a pure AST scanner — no project deps needed. Coverage
+    # threshold and scope come from [tool.interrogate] in the consumer's
+    # pyproject. Opt-in while new: set enable-docstrings: true (default-on
+    # arrives with the next MAJOR).
+    defaults:
+      run:
+        working-directory: ${{ inputs.workdir }}
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v6
+
+      - name: Check out colormath (gate tooling)
+        uses: actions/checkout@v6
+        with:
+          repository: ColorMath/ci
+          ref: ${{ inputs.colormath-ref }}
+          path: .colormath-lib
+          sparse-checkout: |
+            scripts
+            .github
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: Install interrogate
+        run: pip install '${{ inputs.interrogate-spec }}'
+
+      - name: Check docstring coverage
+        run: interrogate ${{ inputs.interrogate-paths }} 2>&1 | tee /tmp/interrogate.log
+
+      - name: Gate summary
+        if: always()
+        uses: ./.colormath-lib/.github/actions/gate-summary
+        with:
+          title: "📝 Docstrings (interrogate)"
+          status: ${{ job.status }}
+          log-files: /tmp/interrogate.log
+          stats: |
+            result=$(grep -m1 -oE 'RESULT: [A-Z]+ \(minimum: [0-9.]+%, actual: [0-9.]+%\)' /tmp/interrogate.log 2>/dev/null || echo 'see log')
+            echo "- ${result}"
 
   styles:
     name: CSS Style (stylelint)

@@ -2,12 +2,12 @@
 
 [![CI](https://github.com/ColorMath/ci/actions/workflows/ci.yml/badge.svg)](https://github.com/ColorMath/ci/actions/workflows/ci.yml)
 
-**Nine CI quality gates for Python web apps, in one `uses:` line.**
+**Ten CI quality gates for Python web apps, in one `uses:` line.**
 
 colormath is a reusable GitHub Actions workflow (plus the scripts and composite
 actions behind it) that gives a Poetry-managed Python project a complete,
-parallel CI gate suite: formatting, lint, types, tests, security, secrets,
-accessibility, dependency CVEs, and per-change test coverage.
+parallel CI gate suite: formatting, lint, types, docstrings, tests, security,
+secrets, accessibility, dependency CVEs, and per-change test coverage.
 
 It grew out of a family of FastAPI + Poetry + Jinja/Tailwind apps deployed on
 Cloud Run, but the gates apply to most Poetry projects — the JS-based gates
@@ -39,8 +39,9 @@ jobs:
       default-branch: main
 ```
 
-Open a pull request and you'll get nine parallel checks, each posting a
-compact stats block to the run summary. Project-specific jobs (deploys,
+Open a pull request and you'll get nine parallel checks (ten once you opt in
+to `docstrings`, which is off by default while new), each posting a compact
+stats block to the run summary. Project-specific jobs (deploys,
 previews, seeding) stay in your repo as siblings that gate on the suite:
 
 ```yaml
@@ -61,6 +62,7 @@ suite against it on every PR.
 | `ruff` | [ruff](https://docs.astral.sh/ruff/) | formatting + lint |
 | `tests` | vitest + pytest | JS and Python suites green |
 | `typecheck` | [mypy](https://mypy-lang.org/) | type checks pass |
+| `docstrings` | [interrogate](https://interrogate.readthedocs.io/) | docstring coverage ≥ your `[tool.interrogate]` fail-under — **opt-in** until the next MAJOR |
 | `styles` | [stylelint](https://stylelint.io/) | design tokens only — no hardcoded colors/font-sizes |
 | `sast` | [bandit](https://bandit.readthedocs.io/) | no Medium+ security findings in app source |
 | `secrets` | [gitleaks](https://github.com/gitleaks/gitleaks) | no secrets anywhere in git history |
@@ -111,16 +113,19 @@ All inputs are optional.
 | `ruff-spec` | `"ruff>=0.14,<0.15"` | pip spec for ruff — match your pyproject pin |
 | `ruff-select` | `""` (full lint) | Restrict `ruff check` to specific rules, e.g. `"I"` |
 | `bandit-spec` | `"bandit>=1.9,<2"` | pip spec for bandit — match your pyproject pin |
+| `interrogate-spec` | `"interrogate>=1.7,<2"` | pip spec for interrogate — match your pyproject pin |
+| `interrogate-paths` | `"."` | space-separated paths for interrogate; scoped by `[tool.interrogate]` excludes |
 | `gitleaks-version` | `"8.30.1"` | gitleaks release to install |
 | `diff-cover-fail-under` | `"90"` | Minimum % coverage on changed lines |
 | `free-disk-space` | `false` | Reclaim runner disk first (heavy ML dependency trees) |
-| `enable-<gate>` | `true` | Per-gate opt-out (see above) |
+| `enable-<gate>` | `true` (`enable-docstrings`: `false`) | Per-gate opt-out (see above); new gates ship opt-in |
 
 ### Files in your repo
 
 | File | Needed for | Purpose |
 |---|---|---|
 | `pyproject.toml` with `[tool.bandit]` | `sast` | scan scope/excludes (plus your mypy/ruff config as usual) |
+| `pyproject.toml` with `[tool.interrogate]` | `docstrings` | coverage threshold (`fail-under`) + excludes |
 | `.colormath/audit.conf` | `deps` | poetry groups that ship + CVE allowlist ([reference](example/.colormath/audit.conf)) |
 | npm scripts `test`, `styles`, `a11y` | the JS gates | see [example/package.json](example/package.json) |
 | `.colormath/ci.env` | optional | non-secret env sourced before pytest in CI |
@@ -231,7 +236,8 @@ test: ## your mirror of the tests gate
 
 Now `make format-check lint typecheck styles sast secrets a11y audit
 coverage-diff` mirror the CI gates one-for-one, and `make preflight` runs the
-whole suite. The `audit` and `coverage-diff` targets fetch their gate scripts
+whole suite. `make docstrings` mirrors the opt-in docstrings gate — it stays
+out of `preflight` until that gate becomes default-on. The `audit` and `coverage-diff` targets fetch their gate scripts
 from this repo at the file's own stamped tag, so local runs and CI share one
 implementation. On upgrades, `make colormath-update REF=vX.Y.Z` refreshes the
 vendored file — keep it in lockstep with your `gates.yml` pin, and review the
