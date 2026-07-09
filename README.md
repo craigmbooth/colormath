@@ -71,7 +71,7 @@ concurrency:
 
 jobs:
   gates:
-    uses: ColorMath/ci/.github/workflows/gates.yml@v0.1.0
+    uses: ColorMath/ci/.github/workflows/gates.yml@v0.1.1
     with:
       python-version: "3.12"
       default-branch: main

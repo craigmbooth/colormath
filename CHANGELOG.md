@@ -5,6 +5,17 @@ one SemVer stream, exact-tag pins, MAJOR = anything that can turn a consumer's
 green CI red without the consumer editing anything. While on `0.x`, breaking
 changes may land in any release.
 
+## v0.1.1 — 2026-07-09
+
+PATCH: keeps green things green.
+
+### Changed
+
+- Repo transferred from `craigmbooth/colormath` to `ColorMath/ci`. All
+  internal checkout refs, docs, and the stamped `colormath-ref` now use the
+  new path. GitHub redirects the old path, so `v0.1.0` pins keep working —
+  but pin `ColorMath/ci/...@v0.1.1` going forward.
+
 ## v0.1.0 — 2026-07-08
 
 Initial release: the CI gates channel.
