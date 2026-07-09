@@ -16,7 +16,7 @@
 #     pyproject.toml, npm scripts `styles`/`a11y`, optional .gitleaks.toml
 # ----------------------------------------------------------------------------
 
-COLORMATH_REF = v0.2.0
+COLORMATH_REF = v0.2.1
 COLORMATH_RAW = https://raw.githubusercontent.com/ColorMath/ci/$(COLORMATH_REF)
 
 # Overridable knobs — set before the include if your project differs.
@@ -41,9 +41,10 @@ styles: ## Gate: CSS uses design tokens (no hardcoded colors/font-sizes)
 	npm run styles
 
 sast: ## Gate: bandit static security scan (Medium+)
-	pip install '$(COLORMATH_BANDIT_SPEC)' >/dev/null && bandit -r . -c pyproject.toml --severity-level medium
+	poetry run pip install '$(COLORMATH_BANDIT_SPEC)' >/dev/null && poetry run bandit -r . -c pyproject.toml --severity-level medium
 
 secrets: ## Gate: gitleaks scan of full git history
+	@command -v gitleaks >/dev/null 2>&1 || { echo "gitleaks not installed — https://github.com/gitleaks/gitleaks#installing" >&2; exit 1; }
 	@if [ -f .gitleaks.toml ]; then \
 		gitleaks git . -c .gitleaks.toml --no-banner --redact; \
 	else \
@@ -53,13 +54,25 @@ secrets: ## Gate: gitleaks scan of full git history
 a11y: ## Gate: html-validate a11y lint of templates (needs Node 22)
 	npm run a11y
 
+# audit and coverage-diff fetch their gate script from ColorMath/ci at the
+# stamped ref (single implementation shared with CI). Fetch-then-run, so a
+# network failure is reported distinctly instead of masquerading as a gate
+# failure.
 audit: ## Gate: pip-audit CVE scan of shipped deps (.colormath/audit.conf)
-	curl -fsSL $(COLORMATH_RAW)/scripts/audit-deps.sh | bash
+	@tmp=$$(mktemp); \
+	curl -fsSL --retry 3 $(COLORMATH_RAW)/scripts/audit-deps.sh -o $$tmp || { \
+		echo "colormath: could not fetch scripts/audit-deps.sh@$(COLORMATH_REF) — this gate needs network access" >&2; \
+		rm -f $$tmp; exit 1; }; \
+	bash $$tmp; rc=$$?; rm -f $$tmp; exit $$rc
 
 coverage-diff: ## Gate: changed lines vs the base branch are covered
-	curl -fsSL $(COLORMATH_RAW)/scripts/diff-coverage.sh | \
-		DIFF_COVER_BASE='$(COLORMATH_DIFF_COVER_BASE)' \
-		DIFF_COVER_FAIL_UNDER='$(COLORMATH_DIFF_COVER_FAIL_UNDER)' bash
+	@tmp=$$(mktemp); \
+	curl -fsSL --retry 3 $(COLORMATH_RAW)/scripts/diff-coverage.sh -o $$tmp || { \
+		echo "colormath: could not fetch scripts/diff-coverage.sh@$(COLORMATH_REF) — this gate needs network access" >&2; \
+		rm -f $$tmp; exit 1; }; \
+	DIFF_COVER_BASE='$(COLORMATH_DIFF_COVER_BASE)' \
+	DIFF_COVER_FAIL_UNDER='$(COLORMATH_DIFF_COVER_FAIL_UNDER)' \
+	bash $$tmp; rc=$$?; rm -f $$tmp; exit $$rc
 
 preflight: format-check lint typecheck styles sast secrets a11y audit test coverage-diff ## Run every CI gate locally (mirror of gates.yml)
 	@echo "All gates passed."

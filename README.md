@@ -33,7 +33,7 @@ concurrency:
 
 jobs:
   gates:
-    uses: ColorMath/ci/.github/workflows/gates.yml@v0.2.0
+    uses: ColorMath/ci/.github/workflows/gates.yml@v0.2.1
     with:
       python-version: "3.12"
       default-branch: main
@@ -85,7 +85,7 @@ existing findings, land the caller with the failing gates disabled, burn the
 findings down, and enable them one by one:
 
 ```yaml
-    uses: ColorMath/ci/.github/workflows/gates.yml@v0.2.0
+    uses: ColorMath/ci/.github/workflows/gates.yml@v0.2.1
     with:
       python-version: "3.12"
       default-branch: main
@@ -137,7 +137,7 @@ and so on).
 so all consumers share the same `make` endpoints. Vendor it once:
 
 ```sh
-curl -fsSLO https://raw.githubusercontent.com/ColorMath/ci/v0.2.0/Makefile.colormath
+curl -fsSLO https://raw.githubusercontent.com/ColorMath/ci/v0.2.1/Makefile.colormath
 ```
 
 then include it from your Makefile, providing the one target it expects from
@@ -161,7 +161,7 @@ diff like any other dependency bump.
 
 ## Versioning and upgrades
 
-One SemVer tag stream, and consumers pin **exact tags only** (`@v0.2.0`, never
+One SemVer tag stream, and consumers pin **exact tags only** (`@v0.2.1`, never
 a floating major tag): an upgrade should arrive as a reviewable PR whose diff
 and changelog explain themselves — not as a surprise inside an unrelated one.
 

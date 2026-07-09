@@ -5,6 +5,20 @@ one SemVer stream, exact-tag pins, MAJOR = anything that can turn a consumer's
 green CI red without the consumer editing anything. While on `0.x`, breaking
 changes may land in any release.
 
+## v0.2.1 — 2026-07-09
+
+PATCH: `Makefile.colormath` robustness fixes, from intendent's adoption
+review. Refresh vendored copies with `make colormath-update REF=v0.2.1`.
+
+### Fixed
+
+- `sast` target: `pip install`/`bandit` now run via `poetry run`, so bandit
+  lands in the project venv instead of whatever pip is on PATH.
+- `secrets` target: restored the actionable "gitleaks not installed" guard.
+- `audit`/`coverage-diff` targets: fetch-then-run with `curl --retry 3` and a
+  distinct error message when the script fetch fails, so a network failure is
+  no longer indistinguishable from a gate failure.
+
 ## v0.2.0 — 2026-07-09
 
 MINOR: new opt-in artifact; existing consumers are unaffected until they

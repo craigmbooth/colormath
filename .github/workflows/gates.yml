@@ -7,7 +7,7 @@ name: Gates
 #
 #   jobs:
 #     gates:
-#       uses: ColorMath/ci/.github/workflows/gates.yml@v0.2.0
+#       uses: ColorMath/ci/.github/workflows/gates.yml@v0.2.1
 #       with:
 #         python-version: "3.12"
 #         default-branch: main
@@ -61,7 +61,7 @@ on:
       colormath-ref:
         description: colormath ref to fetch gate scripts from (stamped per release; do not set as a consumer)
         type: string
-        default: "v0.2.0"
+        default: "v0.2.1"
       ruff-spec:
         description: pip requirement spec for ruff (match your pyproject dev pin)
         type: string
