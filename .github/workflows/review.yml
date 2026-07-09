@@ -1,0 +1,336 @@
+name: Review
+
+# Reusable AI review suite for pull requests (optional — adopt by adding a
+# caller workflow; skip it and nothing changes). Two independent agents run
+# in parallel with each other and with the gates:
+#
+#   review     — the "Thermonuclear Review": a deliberately adversarial audit
+#                of the PR diff, posted as a tracking comment led by the
+#                marker line `## Thermonuclear Review` (downstream automation
+#                can key off that marker).
+#   test-plan  — a QA test-plan agent that classifies the diff (UI vs API
+#                surface), posts a `## Test Plan` comment with concrete QA
+#                checklists, and exposes a machine-readable verdict
+#                (qa_depth / requires_ui_qa / requires_api_qa) as workflow
+#                outputs. Placeholder api-qa / ui-qa jobs gate on the verdict;
+#                consumers can also gate their own jobs on the outputs.
+#
+# Consumers call this with:
+#
+#   name: claude-review
+#   on:
+#     pull_request:
+#       types: [opened, reopened, ready_for_review]   # every created PR
+#     issue_comment:                                  # "@claude" re-runs
+#       types: [created]
+#     pull_request_review_comment:
+#       types: [created]
+#   jobs:
+#     review:
+#       uses: ColorMath/ci/.github/workflows/review.yml@v0.3.0
+#       permissions:
+#         contents: read
+#         pull-requests: write
+#         issues: write
+#         id-token: write
+#       secrets:
+#         anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+#       with:
+#         review-focus: "Pay attention to <project-specific hot spots>."
+#
+# The job-level `if:` conditions below read the CALLER's event, so the
+# caller declares the triggers and this workflow decides when to run:
+# non-draft PR opened/reopened/readied, or "@claude" mentioned in any PR
+# comment (conversation or inline review).
+
+on:
+  workflow_call:
+    inputs:
+      model:
+        description: Claude model for both agents
+        type: string
+        default: "claude-sonnet-4-6"
+      review-focus:
+        description: Extra project-specific emphasis appended to the review prompt (e.g. sensitive surfaces to scrutinize)
+        type: string
+        default: ""
+      enable-review:
+        type: boolean
+        default: true
+      enable-test-plan:
+        type: boolean
+        default: true
+    secrets:
+      anthropic_api_key:
+        description: Anthropic API key used by both agents
+        required: true
+    outputs:
+      qa_depth:
+        description: Test-plan verdict — low | medium | high
+        value: ${{ jobs.test-plan.outputs.qa_depth }}
+      requires_ui_qa:
+        description: Test-plan verdict — "true" when rendered-UI behavior may differ
+        value: ${{ jobs.test-plan.outputs.requires_ui_qa }}
+      requires_api_qa:
+        description: Test-plan verdict — "true" when request/response behavior changed
+        value: ${{ jobs.test-plan.outputs.requires_api_qa }}
+
+jobs:
+  review:
+    # Run when a non-draft PR is opened/reopened/marked ready, OR when someone
+    # mentions @claude in a comment on a PR (issue_comment fires on issues too,
+    # so gate on `.issue.pull_request` to ensure the comment is on a PR).
+    if: |
+      inputs.enable-review &&
+      ((github.event_name == 'pull_request' && github.event.pull_request.draft == false) ||
+       (github.event_name == 'issue_comment' && github.event.issue.pull_request != null && contains(github.event.comment.body, '@claude')) ||
+       (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read          # review-only: does NOT push commits
+      pull-requests: write     # post the review + inline comments
+      issues: write            # post the tracking comment on comment-triggered runs
+      id-token: write          # OIDC
+    concurrency:
+      # pull_request_review_comment carries .pull_request.number; issue_comment
+      # carries the PR number as .issue.number. Fall back across both so a
+      # comment-triggered run shares the per-PR group (and cancels a stale run).
+      group: claude-review-${{ github.event.pull_request.number || github.event.issue.number }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0       # full history so it can diff against base
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.anthropic_api_key }}
+          # track_progress forces "tag mode": the action creates a tracking
+          # comment on the PR and wires up the inline-comment + comment-update
+          # tools, so Claude can ALWAYS post its summary (and inline findings)
+          # even on an automation trigger. Without it, prompt mode has nowhere
+          # to post and the review silently goes only to the job log.
+          track_progress: true
+          # --verbose streams every turn/tool-call to the Actions log so the
+          # run is easy to follow live.
+          claude_args: "--model ${{ inputs.model }} --verbose"
+          prompt: |
+            You are running a THERMONUCLEAR review: an unusually strict,
+            adversarial audit of this PR's diff. Assume the author and their
+            AI pair share blind spots, so nothing slips through. Review ONLY
+            code added or modified in this PR; use the rest of the codebase
+            as context, not as a target.
+
+            Audit across four fronts:
+
+            1. Correctness & breaking changes — logic errors, unhandled edge
+               cases, error and exception paths, race conditions, and any
+               change that silently breaks existing behavior, callers, or
+               feature flags/gates.
+            2. Security — injection, authz gaps, unsafe deserialization,
+               secret handling, SSRF and path traversal, and any untrusted
+               input flow.
+            3. Maintainability & structure — be ambitious. Flag oversized
+               files, tangled conditionals, and leaky or redundant
+               abstractions. Actively look for "code judo": behavior-
+               preserving restructurings that make whole branches, helpers,
+               modes, or layers disappear and leave the change feeling
+               inevitable in hindsight. Do not settle for local cleanup.
+            4. DevEx regressions — confusing APIs, footguns, missing types at
+               module boundaries, silent failure modes.
+
+            ${{ inputs.review-focus != '' && format('Project-specific emphasis: {0}', inputs.review-focus) || '' }}
+
+            As you work, narrate what you're doing — say which files you're
+            reading and what you're checking — so the run is easy to follow.
+
+            Output rules:
+            - Group findings as Blocker / Suggestion / Nit, each with
+              file:line and a concrete proposed fix (or diff snippet).
+            - Tag every finding [high-confidence] or [speculative]. This
+              review is intentionally aggressive and will over-flag, so be
+              honest about certainty to keep triage cheap.
+            - If a single high-leverage structural move exists, lead with it.
+            - Be concise and specific. No praise, no restating the diff.
+            - Post inline comments on the relevant lines.
+            - Your summary is posted as a PR *comment* (the tracking comment
+              this action maintains), NOT as a formal GitHub review. Downstream
+              automation keys off this comment, so it must always appear.
+            - ALWAYS post a summary comment, even when the review is clean, and
+              begin it with this exact marker line so it is unambiguously
+              identifiable by both humans and automation:
+
+                  ## Thermonuclear Review
+
+              Below the marker, update the tracking comment with: the files you
+              reviewed, a count of findings by severity, and the grouped
+              findings. If you found nothing worth flagging, say so explicitly
+              (e.g. "✅ No blocking issues; N nits below") rather than leaving
+              it empty.
+
+  # Runs in PARALLEL with `review` (no `needs:`) and with the gates workflow.
+  # Generates a QA test plan for the PR and posts it as its own PR comment,
+  # then exposes a machine-readable verdict (QA depth + whether UI/API QA is
+  # needed) as job outputs so a downstream QA-executor job can consume them.
+  test-plan:
+    if: |
+      inputs.enable-test-plan &&
+      ((github.event_name == 'pull_request' && github.event.pull_request.draft == false) ||
+       (github.event_name == 'issue_comment' && github.event.issue.pull_request != null && contains(github.event.comment.body, '@claude')) ||
+       (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read          # analysis-only: does NOT push commits
+      pull-requests: write     # post the test-plan comment
+      issues: write            # comment API for comment-triggered runs
+      id-token: write          # OIDC
+    concurrency:
+      group: claude-testplan-${{ github.event.pull_request.number || github.event.issue.number }}
+      cancel-in-progress: true
+    # Exposed as workflow_call outputs so a consumer QA-executor job can gate
+    # on them (e.g. `needs: [review]` + `if: needs.review.outputs.requires_ui_qa == 'true'`).
+    outputs:
+      qa_depth: ${{ steps.verdict.outputs.qa_depth }}
+      requires_ui_qa: ${{ steps.verdict.outputs.requires_ui_qa }}
+      requires_api_qa: ${{ steps.verdict.outputs.requires_api_qa }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0       # full history so it can diff against base
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.anthropic_api_key }}
+          # Same tag-mode wiring as `review` so the agent can always post its
+          # comment, even on an automation/comment trigger.
+          track_progress: true
+          claude_args: "--model ${{ inputs.model }} --verbose"
+          prompt: |
+            You are the QA TEST-PLAN agent for this PR. You do read-only
+            analysis: study the PR's diff (and the surrounding code as context)
+            and produce a concrete plan for how a human or agent should QA this
+            change. You do NOT review code quality — that is a separate job.
+
+            First, classify every changed path using this app archetype's
+            FE/BE boundary:
+            - UI-affecting: `templates/**/*.html`, `static/js/**/*.js` (not
+              `*.test.js`), `static/css/src/**/*.css`, and any `routes/*.py`
+              change that adds/modifies a `TemplateResponse`/`HTMLResponse` or
+              the context it renders.
+            - API/backend: `models/`, `services/`, `handlers/`, migrations,
+              JSON-only routes, background jobs, infra, docs, tests.
+
+            Then decide the verdict:
+            - qa_depth — overall risk/effort to QA this PR:
+              * low    — tiny, low-risk, well-covered change (copy tweak,
+                         isolated helper, docs).
+              * medium — a feature or behavior change touching one area, with
+                         a few interacting paths.
+              * high   — broad/cross-cutting change, auth/permissions/billing,
+                         data migrations, or anything touching money, security,
+                         or destructive operations.
+            - requires_ui_qa — true if any UI-affecting path changed or rendered
+              HTML/JS/CSS behavior could differ; otherwise false. (The CI
+              gates do NOT exercise the rendered UI, so visual regressions are
+              uncaught — lean toward true when a template/JS/CSS file changed.)
+            - requires_api_qa — true if request/response behavior, routes,
+              services, models, migrations, or background jobs changed;
+              otherwise false.
+
+            Post your output as a PR *comment* (the tracking comment this action
+            maintains). Begin it with EXACTLY this marker line so humans and
+            automation can find it:
+
+                ## Test Plan
+
+            Immediately after the marker, on its own line, include this hidden
+            HTML comment with the machine-readable verdict — fill the three
+            values, keep the format byte-for-byte (a later workflow step greps
+            it to set job outputs):
+
+                <!-- colormath-test-plan -->
+                <!-- testplan qa_depth=<low|medium|high> requires_ui_qa=<true|false> requires_api_qa=<true|false> -->
+
+            Then write, in this order:
+            1. Change summary — what the PR does and the riskiest areas, in 2-4
+               bullets.
+            2. Verdict — restate qa_depth / requires_ui_qa / requires_api_qa in
+               plain English, and name the exact paths that drove each.
+            3. Full-UI QA checklist — concrete, clickable steps to exercise the
+               feature through the browser: which pages/routes to visit, what
+               auth/role and seed data are needed, the actions to take, and the
+               expected result for each (mark "N/A — no UI surface" if
+               requires_ui_qa is false).
+            4. API-only QA checklist — concrete steps to exercise it without the
+               UI: endpoints/methods/payloads to call, auth needed, DB/state to
+               verify, and expected status/response for each (mark "N/A" if
+               requires_api_qa is false).
+            5. Residual risk — what the existing CI gates already cover vs. what
+               they do not (call out explicitly that rendered-UI regressions are
+               not caught by CI).
+
+            Make every checklist item independently checkable (checkbox list),
+            specific to THIS diff — no generic boilerplate. Narrate which files
+            you read as you go so the run is easy to follow.
+      - name: Parse verdict into job outputs
+        id: verdict
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number || github.event.issue.number }}
+        run: |
+          # The agent embeds a hidden `<!-- testplan ... -->` marker in its
+          # comment. Pull the latest test-plan comment and parse it; fall back
+          # to the conservative worst case (high / true / true) if anything is
+          # missing, so a downstream QA job never under-tests by accident.
+          body=$(gh pr view "$PR" --json comments \
+            --jq '[.comments[] | select(.body | contains("<!-- colormath-test-plan -->"))] | last | .body' \
+            2>/dev/null || true)
+          marker=$(printf '%s' "$body" | grep -oE '<!-- testplan [^>]*-->' | tail -n1 || true)
+
+          depth=$(printf '%s' "$marker" | grep -oE 'qa_depth=(low|medium|high)' | cut -d= -f2 | tail -n1)
+          ui=$(printf '%s' "$marker" | grep -oE 'requires_ui_qa=(true|false)' | cut -d= -f2 | tail -n1)
+          api=$(printf '%s' "$marker" | grep -oE 'requires_api_qa=(true|false)' | cut -d= -f2 | tail -n1)
+
+          depth=${depth:-high}; ui=${ui:-true}; api=${api:-true}
+          {
+            echo "qa_depth=$depth"
+            echo "requires_ui_qa=$ui"
+            echo "requires_api_qa=$api"
+          } >> "$GITHUB_OUTPUT"
+
+          parsed="✅"; [ -n "$marker" ] || parsed="⚠️ marker not found — using conservative defaults"
+          {
+            echo "## Test Plan · verdict"
+            echo ""
+            echo "| field | value |"
+            echo "|---|---|"
+            echo "| qa_depth | \`$depth\` |"
+            echo "| requires_ui_qa | \`$ui\` |"
+            echo "| requires_api_qa | \`$api\` |"
+            echo ""
+            echo "$parsed"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # Conditional QA jobs, gated on the test-plan verdict. Each `needs:` the
+  # test-plan job so it can read its outputs, and only runs when that kind of
+  # QA was flagged. Placeholders for now — they just echo the QA depth and
+  # their own name; real QA steps will replace the echo later.
+  api-qa:
+    needs: [test-plan]
+    if: needs.test-plan.outputs.requires_api_qa == 'true'
+    runs-on: ubuntu-latest
+    permissions: {}          # placeholder echo — needs no token scopes
+    steps:
+      - name: API QA (placeholder)
+        run: |
+          echo "job=api-qa"
+          echo "qa_depth=${{ needs.test-plan.outputs.qa_depth }}"
+
+  ui-qa:
+    needs: [test-plan]
+    if: needs.test-plan.outputs.requires_ui_qa == 'true'
+    runs-on: ubuntu-latest
+    permissions: {}          # placeholder echo — needs no token scopes
+    steps:
+      - name: UI QA (placeholder)
+        run: |
+          echo "job=ui-qa"
+          echo "qa_depth=${{ needs.test-plan.outputs.qa_depth }}"

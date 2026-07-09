@@ -33,7 +33,7 @@ concurrency:
 
 jobs:
   gates:
-    uses: ColorMath/ci/.github/workflows/gates.yml@v0.2.1
+    uses: ColorMath/ci/.github/workflows/gates.yml@v0.3.0
     with:
       python-version: "3.12"
       default-branch: main
@@ -85,7 +85,7 @@ existing findings, land the caller with the failing gates disabled, burn the
 findings down, and enable them one by one:
 
 ```yaml
-    uses: ColorMath/ci/.github/workflows/gates.yml@v0.2.1
+    uses: ColorMath/ci/.github/workflows/gates.yml@v0.3.0
     with:
       python-version: "3.12"
       default-branch: main
@@ -131,13 +131,58 @@ Once the checks are green, register each gate's job name as a required status
 check in your branch protection (they appear as `gates / Ruff (format + lint)`
 and so on).
 
+## Optional: AI review + test plan
+
+[review.yml](.github/workflows/review.yml) is a second reusable workflow —
+entirely opt-in, adopted per project by adding a caller (skip the caller and
+nothing changes). It runs two Claude agents in parallel on every non-draft PR
+(re-runnable by commenting `@claude`):
+
+- **review** — the "Thermonuclear Review": a deliberately adversarial audit of
+  the diff across correctness, security, maintainability, and DevEx, posted as
+  a tracking comment (marker line `## Thermonuclear Review`) with inline
+  comments on the relevant lines.
+- **test-plan** — classifies the diff (UI vs API surface) and posts a
+  `## Test Plan` comment with concrete QA checklists, exposing a
+  machine-readable verdict (`qa_depth`, `requires_ui_qa`, `requires_api_qa`)
+  as workflow outputs for downstream QA jobs to gate on.
+
+```yaml
+name: claude-review
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review]
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+
+jobs:
+  review:
+    uses: ColorMath/ci/.github/workflows/review.yml@v0.3.0
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+    secrets:
+      anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+    with:
+      review-focus: "Pay attention to <project-specific hot spots>."
+```
+
+Inputs: `model` (default `claude-sonnet-4-6`), `review-focus` (extra
+project-specific emphasis for the reviewer), and `enable-review` /
+`enable-test-plan` toggles. Requires an `ANTHROPIC_API_KEY` repo secret.
+
 ## Running the gates locally
 
 [Makefile.colormath](Makefile.colormath) defines a local mirror of every gate,
 so all consumers share the same `make` endpoints. Vendor it once:
 
 ```sh
-curl -fsSLO https://raw.githubusercontent.com/ColorMath/ci/v0.2.1/Makefile.colormath
+curl -fsSLO https://raw.githubusercontent.com/ColorMath/ci/v0.3.0/Makefile.colormath
 ```
 
 then include it from your Makefile, providing the one target it expects from
@@ -161,7 +206,7 @@ diff like any other dependency bump.
 
 ## Versioning and upgrades
 
-One SemVer tag stream, and consumers pin **exact tags only** (`@v0.2.1`, never
+One SemVer tag stream, and consumers pin **exact tags only** (`@v0.3.0`, never
 a floating major tag): an upgrade should arrive as a reviewable PR whose diff
 and changelog explain themselves — not as a surprise inside an unrelated one.
 
@@ -175,6 +220,7 @@ While on `0.x`, breaking changes may land in any release.
 
 ```
 .github/workflows/gates.yml    # the reusable gate suite (workflow_call)
+.github/workflows/review.yml   # optional reusable AI review + test-plan suite
 .github/workflows/ci.yml       # self-test: runs the suite against example/
 .github/actions/               # setup-python-poetry, setup-node, gate-summary
 Makefile.colormath             # shared local gate targets — vendored by consumers

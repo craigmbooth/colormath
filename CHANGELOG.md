@@ -5,6 +5,29 @@ one SemVer stream, exact-tag pins, MAJOR = anything that can turn a consumer's
 green CI red without the consumer editing anything. While on `0.x`, breaking
 changes may land in any release.
 
+## v0.3.0 — 2026-07-09
+
+MINOR: new opt-in artifact; existing consumers are unaffected until they add
+a caller for it.
+
+### Added
+
+- **Reusable AI review suite** (`.github/workflows/review.yml`,
+  `workflow_call`), extracted from intendent's `claude-review` workflow. Two
+  parallel agents on every non-draft PR (re-runnable via `@claude` comment):
+  the adversarial "Thermonuclear Review" (tracking comment led by the
+  `## Thermonuclear Review` marker + inline comments) and the QA test-plan
+  agent (`## Test Plan` comment; machine-readable
+  `qa_depth`/`requires_ui_qa`/`requires_api_qa` exposed as workflow outputs,
+  with placeholder `api-qa`/`ui-qa` jobs gating on them).
+  - Inputs: `model`, `review-focus` (project-specific reviewer emphasis —
+    replaces intendent's hardcoded Google Drive note), `enable-review`,
+    `enable-test-plan`. Secret: `anthropic_api_key` (required).
+  - The hidden test-plan marker is now `<!-- colormath-test-plan -->`
+    (was `<!-- intendent-test-plan -->`); the human-visible markers are
+    unchanged, so automation keyed on `## Thermonuclear Review` /
+    `## Test Plan` keeps working.
+
 ## v0.2.1 — 2026-07-09
 
 PATCH: `Makefile.colormath` robustness fixes, from intendent's adoption
