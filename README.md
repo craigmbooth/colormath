@@ -33,7 +33,7 @@ concurrency:
 
 jobs:
   gates:
-    uses: ColorMath/ci/.github/workflows/gates.yml@v0.1.1
+    uses: ColorMath/ci/.github/workflows/gates.yml@v0.2.0
     with:
       python-version: "3.12"
       default-branch: main
@@ -85,7 +85,7 @@ existing findings, land the caller with the failing gates disabled, burn the
 findings down, and enable them one by one:
 
 ```yaml
-    uses: ColorMath/ci/.github/workflows/gates.yml@v0.1.1
+    uses: ColorMath/ci/.github/workflows/gates.yml@v0.2.0
     with:
       python-version: "3.12"
       default-branch: main
@@ -133,25 +133,35 @@ and so on).
 
 ## Running the gates locally
 
-Most gates are one-liners you can mirror as Makefile targets (`ruff format
---check .`, `poetry run mypy .`, `npm run a11y`, …). The two gates with real
-logic — `deps` and `diff-coverage` — live in [scripts/](scripts/) so local
-runs and CI share one implementation. Don't copy them into your repo; fetch
-them at the tag you pin:
+[Makefile.colormath](Makefile.colormath) defines a local mirror of every gate,
+so all consumers share the same `make` endpoints. Vendor it once:
+
+```sh
+curl -fsSLO https://raw.githubusercontent.com/ColorMath/ci/v0.2.0/Makefile.colormath
+```
+
+then include it from your Makefile, providing the one target it expects from
+you (`test`) and overriding knobs before the include if your project differs:
 
 ```make
-COLORMATH_REF = v0.1.1  # keep in lockstep with the pin in gates.yml
+# COLORMATH_DIFF_COVER_BASE = origin/master   # example override
+include Makefile.colormath
 
-audit:
-	curl -fsSL https://raw.githubusercontent.com/ColorMath/ci/$(COLORMATH_REF)/scripts/audit-deps.sh | bash
-
-coverage-diff:
-	curl -fsSL https://raw.githubusercontent.com/ColorMath/ci/$(COLORMATH_REF)/scripts/diff-coverage.sh | bash
+test: ## your mirror of the tests gate
+	poetry run pytest tests/ && npm test
 ```
+
+Now `make format-check lint typecheck styles sast secrets a11y audit
+coverage-diff` mirror the CI gates one-for-one, and `make preflight` runs the
+whole suite. The `audit` and `coverage-diff` targets fetch their gate scripts
+from this repo at the file's own stamped tag, so local runs and CI share one
+implementation. On upgrades, `make colormath-update REF=vX.Y.Z` refreshes the
+vendored file — keep it in lockstep with your `gates.yml` pin, and review the
+diff like any other dependency bump.
 
 ## Versioning and upgrades
 
-One SemVer tag stream, and consumers pin **exact tags only** (`@v0.1.1`, never
+One SemVer tag stream, and consumers pin **exact tags only** (`@v0.2.0`, never
 a floating major tag): an upgrade should arrive as a reviewable PR whose diff
 and changelog explain themselves — not as a surprise inside an unrelated one.
 
@@ -167,6 +177,7 @@ While on `0.x`, breaking changes may land in any release.
 .github/workflows/gates.yml    # the reusable gate suite (workflow_call)
 .github/workflows/ci.yml       # self-test: runs the suite against example/
 .github/actions/               # setup-python-poetry, setup-node, gate-summary
+Makefile.colormath             # shared local gate targets — vendored by consumers
 scripts/                       # gate scripts, fetched by the workflow at its own ref
 example/                       # minimal compliant consumer + contract reference
 docs/                          # adoption notes for the maintainer's own products

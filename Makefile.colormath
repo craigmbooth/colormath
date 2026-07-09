@@ -1,0 +1,70 @@
+# ----------------------------------------------------------------------------
+# Makefile.colormath — shared local mirrors of the colormath CI gates.
+#
+# Vendored from ColorMath/ci at the tag in COLORMATH_REF below. Do not edit
+# this file in your repo — refresh it with:
+#
+#   make colormath-update REF=vX.Y.Z
+#
+# and keep the ref in lockstep with your gates.yml workflow pin (both are
+# stamped per release, so the refreshed file pins itself).
+#
+# Contract with the including Makefile:
+#   - `include Makefile.colormath` AFTER any COLORMATH_* overrides
+#   - define a `test` target (your mirror of the tests gate; preflight runs it)
+#   - config lives where CI reads it: .colormath/audit.conf, [tool.bandit] in
+#     pyproject.toml, npm scripts `styles`/`a11y`, optional .gitleaks.toml
+# ----------------------------------------------------------------------------
+
+COLORMATH_REF = v0.2.0
+COLORMATH_RAW = https://raw.githubusercontent.com/ColorMath/ci/$(COLORMATH_REF)
+
+# Overridable knobs — set before the include if your project differs.
+COLORMATH_BANDIT_SPEC ?= bandit>=1.9,<2
+COLORMATH_RUFF_CHECK_ARGS ?=      # e.g. "--select I" for imports-only lint
+COLORMATH_DIFF_COVER_BASE ?=      # e.g. origin/master; empty = script default
+COLORMATH_DIFF_COVER_FAIL_UNDER ?=  # e.g. 80; empty = script default (90)
+
+.PHONY: format-check lint typecheck styles sast secrets a11y audit \
+	coverage-diff preflight colormath-update
+
+format-check: ## Gate: ruff formatting is clean
+	poetry run ruff format --check .
+
+lint: ## Gate: ruff lint passes
+	poetry run ruff check $(COLORMATH_RUFF_CHECK_ARGS) .
+
+typecheck: ## Gate: mypy type check passes
+	poetry run mypy .
+
+styles: ## Gate: CSS uses design tokens (no hardcoded colors/font-sizes)
+	npm run styles
+
+sast: ## Gate: bandit static security scan (Medium+)
+	pip install '$(COLORMATH_BANDIT_SPEC)' >/dev/null && bandit -r . -c pyproject.toml --severity-level medium
+
+secrets: ## Gate: gitleaks scan of full git history
+	@if [ -f .gitleaks.toml ]; then \
+		gitleaks git . -c .gitleaks.toml --no-banner --redact; \
+	else \
+		gitleaks git . --no-banner --redact; \
+	fi
+
+a11y: ## Gate: html-validate a11y lint of templates (needs Node 22)
+	npm run a11y
+
+audit: ## Gate: pip-audit CVE scan of shipped deps (.colormath/audit.conf)
+	curl -fsSL $(COLORMATH_RAW)/scripts/audit-deps.sh | bash
+
+coverage-diff: ## Gate: changed lines vs the base branch are covered
+	curl -fsSL $(COLORMATH_RAW)/scripts/diff-coverage.sh | \
+		DIFF_COVER_BASE='$(COLORMATH_DIFF_COVER_BASE)' \
+		DIFF_COVER_FAIL_UNDER='$(COLORMATH_DIFF_COVER_FAIL_UNDER)' bash
+
+preflight: format-check lint typecheck styles sast secrets a11y audit test coverage-diff ## Run every CI gate locally (mirror of gates.yml)
+	@echo "All gates passed."
+
+colormath-update: ## Refresh this file: make colormath-update REF=vX.Y.Z
+	@test -n "$(REF)" || { echo "usage: make colormath-update REF=vX.Y.Z" >&2; exit 1; }
+	curl -fsSL "https://raw.githubusercontent.com/ColorMath/ci/$(REF)/Makefile.colormath" -o Makefile.colormath
+	@echo "Makefile.colormath refreshed to $(REF) — bump the gates.yml pin to match."

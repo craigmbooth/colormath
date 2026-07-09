@@ -5,6 +5,23 @@ one SemVer stream, exact-tag pins, MAJOR = anything that can turn a consumer's
 green CI red without the consumer editing anything. While on `0.x`, breaking
 changes may land in any release.
 
+## v0.2.0 — 2026-07-09
+
+MINOR: new opt-in artifact; existing consumers are unaffected until they
+vendor it.
+
+### Added
+
+- **`Makefile.colormath`**: shared local mirrors of every gate, so all
+  consumers expose the same `make` endpoints (`format-check`, `lint`,
+  `typecheck`, `styles`, `sast`, `secrets`, `a11y`, `audit`,
+  `coverage-diff`, `preflight`). Consumers vendor it at a pinned tag and
+  `include` it from their Makefile, providing a `test` target and optional
+  `COLORMATH_*` overrides (`BANDIT_SPEC`, `RUFF_CHECK_ARGS`,
+  `DIFF_COVER_BASE`, `DIFF_COVER_FAIL_UNDER`). `make colormath-update
+  REF=vX.Y.Z` refreshes the vendored copy; the file's `COLORMATH_REF` is
+  stamped per release like the workflow's `colormath-ref`.
+
 ## v0.1.1 — 2026-07-09
 
 PATCH: keeps green things green.
