@@ -4,7 +4,7 @@ Working notes for migrating the maintainer's own products onto the gates
 channel. Adoption order is always talas (canary) → intendent → runwayz
 (see [LIFECYCLE.md](../LIFECYCLE.md)).
 
-## talas — done (talas-app/talas#63, @v0.2.1)
+## talas — done (talas-app/talas#63, @v0.2.1; no review workflow or plugin yet — both opt-in)
 
 `default-branch: main`, `poetry-install-args: "--with webapp,worker"`,
 `ruff-spec` matching pyproject's `^0.14.8` pin. `scripts/diff-coverage.sh` and
@@ -18,7 +18,7 @@ mirrors come from a vendored `Makefile.colormath` (repo Makefile just
 `include`s it and defines `test`). No branch protection to update (private
 repo, free plan).
 
-## intendent — done (craigmbooth/intendent#71, @v0.2.1)
+## intendent — done (craigmbooth/intendent#71, @v0.4.0)
 
 - Vendor `Makefile.colormath`; set `COLORMATH_RUFF_CHECK_ARGS = --select I` and
   `COLORMATH_DIFF_COVER_BASE = origin/master` before the include
