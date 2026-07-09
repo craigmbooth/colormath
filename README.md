@@ -183,7 +183,8 @@ The `colormath` plugin ships skills for working in consumer repos — currently
 **`/colormath:ship`**: take the current branch through the whole PR pipeline
 (open the PR, watch the gates, wait for the Thermonuclear Review, triage
 findings, apply small fixes) and stop at a merge recommendation — never
-merging itself.
+merging itself. Each skill's behavior, prerequisites, and contract
+dependencies are documented in [plugin/README.md](plugin/README.md).
 
 Install manually:
 
