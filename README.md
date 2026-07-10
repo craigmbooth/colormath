@@ -34,16 +34,14 @@ concurrency:
 
 jobs:
   gates:
-    uses: ColorMath/ci/.github/workflows/gates.yml@v0.6.0
+    uses: ColorMath/ci/.github/workflows/gates.yml@v1.0.0
     with:
       python-version: "3.12"
       default-branch: main
 ```
 
-Open a pull request and you'll get nine parallel checks — fourteen once you
-opt in to the gates that are off by default while new (`docstrings`,
-`jslint`, `templates`, `js-deps`, `dockerfile`) — each posting a compact
-stats block to the run summary. Project-specific jobs (deploys,
+Open a pull request and you'll get fourteen parallel checks, each posting a
+compact stats block to the run summary. Project-specific jobs (deploys,
 previews, seeding) stay in your repo as siblings that gate on the suite:
 
 ```yaml
@@ -64,16 +62,16 @@ suite against it on every PR.
 | `ruff` | [ruff](https://docs.astral.sh/ruff/) | formatting + lint |
 | `tests` | vitest + pytest | `poetry.lock` in sync with pyproject, then JS and Python suites green |
 | `typecheck` | [mypy](https://mypy-lang.org/) | type checks pass |
-| `docstrings` | [interrogate](https://interrogate.readthedocs.io/) | docstring coverage ≥ your `[tool.interrogate]` fail-under — **opt-in** until the next MAJOR |
-| `jslint` | [eslint](https://eslint.org/) | hand-written JS passes lint — **opt-in** until the next MAJOR |
+| `docstrings` | [interrogate](https://interrogate.readthedocs.io/) | docstring coverage ≥ your `[tool.interrogate]` fail-under |
+| `jslint` | [eslint](https://eslint.org/) | hand-written JS passes lint |
 | `styles` | [stylelint](https://stylelint.io/) | design tokens only — no hardcoded colors/font-sizes |
-| `templates` | [djlint](https://djlint.com/) | Jinja templates are well-formed (per `[tool.djlint]`) — **opt-in** until the next MAJOR |
+| `templates` | [djlint](https://djlint.com/) | Jinja templates are well-formed (per `[tool.djlint]`) |
 | `sast` | [bandit](https://bandit.readthedocs.io/) | no Medium+ security findings in app source |
 | `secrets` | [gitleaks](https://github.com/gitleaks/gitleaks) | no secrets anywhere in git history |
 | `a11y` | [html-validate](https://html-validate.org/) | templates pass the a11y preset |
 | `deps` | [pip-audit](https://pypi.org/project/pip-audit/) | locked, shipped deps have no actionable CVEs |
-| `js-deps` | npm audit | locked, shipped JS deps have no high+ CVEs — **opt-in** until the next MAJOR |
-| `dockerfile` | [hadolint](https://github.com/hadolint/hadolint) | Dockerfile best practices — **opt-in** until the next MAJOR |
+| `js-deps` | npm audit | locked, shipped JS deps have no high+ CVEs |
+| `dockerfile` | [hadolint](https://github.com/hadolint/hadolint) | Dockerfile best practices |
 | `diff-coverage` | [diff-cover](https://github.com/Bachmann1234/diff_cover) | changed lines ≥90% covered |
 
 Two design choices worth calling out:
@@ -94,7 +92,7 @@ existing findings, land the caller with the failing gates disabled, burn the
 findings down, and enable them one by one:
 
 ```yaml
-    uses: ColorMath/ci/.github/workflows/gates.yml@v0.6.0
+    uses: ColorMath/ci/.github/workflows/gates.yml@v1.0.0
     with:
       python-version: "3.12"
       default-branch: main
@@ -130,7 +128,7 @@ All inputs are optional.
 | `npm-audit-level` | `"high"` | severity at which npm audit fails the `js-deps` gate |
 | `diff-cover-fail-under` | `"90"` | Minimum % coverage on changed lines |
 | `free-disk-space` | `false` | Reclaim runner disk first (heavy ML dependency trees) |
-| `enable-<gate>` | `true` (opt-in gates: `false`) | Per-gate opt-out (see above); new gates (`docstrings`, `jslint`, `templates`, `js-deps`, `dockerfile`) ship opt-in |
+| `enable-<gate>` | `true` | Per-gate opt-out (see above) |
 
 ### Files in your repo
 
@@ -141,7 +139,7 @@ All inputs are optional.
 | `pyproject.toml` with `[tool.djlint]` | `templates` | djlint profile (e.g. `jinja`) + rule ignores |
 | `.colormath/audit.conf` | `deps` | poetry groups that ship + CVE allowlist ([reference](example/.colormath/audit.conf)) |
 | npm scripts `test`, `jslint`, `styles`, `a11y` | the JS gates | see [example/package.json](example/package.json) |
-| `eslint.config.js` | `jslint` | eslint flat config ([reference](example/eslint.config.js)) |
+| `eslint.config.js` + vendored `eslint.config.colormath.mjs` | `jslint` | thin caller of the shared eslint base ([reference](example/eslint.config.js)); devDeps `eslint`, `@eslint/js`, `globals` |
 | `Dockerfile` | `dockerfile` | linted by hadolint ([reference](example/Dockerfile)) |
 | `.colormath/ci.env` | optional | non-secret env sourced before pytest in CI |
 | `.colormath/ci-extra-install.sh` | optional | extra install steps after `poetry install` (must be executable) |
@@ -199,7 +197,7 @@ on:
 
 jobs:
   review:
-    uses: ColorMath/ci/.github/workflows/review.yml@v0.6.0
+    uses: ColorMath/ci/.github/workflows/review.yml@v1.0.0
     permissions:
       contents: read
       pull-requests: write
@@ -257,37 +255,43 @@ or have a consumer repo offer it to everyone who opens it, via
 
 ## Running the gates locally
 
-[Makefile.colormath](Makefile.colormath) defines a local mirror of every gate,
-so all consumers share the same `make` endpoints. Vendor it once:
+Two files are vendored into every consumer at the pinned tag:
+[Makefile.colormath](Makefile.colormath) (a local mirror of every gate, so
+all consumers share the same `make` endpoints) and
+[eslint.config.colormath.mjs](eslint.config.colormath.mjs) (the shared eslint
+base — your `eslint.config.js` stays a thin caller; see its header for the
+factory options and escape hatches). Vendor them once:
 
 ```sh
-curl -fsSLO https://raw.githubusercontent.com/ColorMath/ci/v0.6.0/Makefile.colormath
+curl -fsSLO https://raw.githubusercontent.com/ColorMath/ci/v1.0.0/Makefile.colormath
+curl -fsSLO https://raw.githubusercontent.com/ColorMath/ci/v1.0.0/eslint.config.colormath.mjs
 ```
 
-then include it from your Makefile, providing the one target it expects from
-you (`test`) and overriding knobs before the include if your project differs:
+then include the Makefile from yours, providing the one target it expects
+from you (`test`) and setting knobs before the include if your project
+differs:
 
 ```make
 # COLORMATH_DIFF_COVER_BASE = origin/master   # example override
+COLORMATH_PREFLIGHT_SKIP = templates          # mirror your enable-*: false flags
 include Makefile.colormath
 
 test: ## your mirror of the tests gate
 	poetry run pytest tests/ && npm test
 ```
 
-Now `make format-check lint lock-check typecheck styles sast secrets a11y
-audit coverage-diff` mirror the CI gates one-for-one, and `make preflight`
-runs the whole default-on suite. The opt-in gates have mirrors too — `make
-docstrings jslint templates js-audit dockerfile` — which stay out of
-`preflight` until their gates become default-on. The `audit` and `coverage-diff` targets fetch their gate scripts
-from this repo at the file's own stamped tag, so local runs and CI share one
-implementation. On upgrades, `make colormath-update REF=vX.Y.Z` refreshes the
-vendored file — keep it in lockstep with your `gates.yml` pin, and review the
-diff like any other dependency bump.
+Now every gate has a same-named `make` mirror (`make jslint`, `make audit`,
+`make dockerfile`, …), and `make preflight` runs the full suite minus
+`COLORMATH_PREFLIGHT_SKIP` — keep that list in lockstep with the gates your
+caller disables. The `audit` and `coverage-diff` targets fetch their gate
+scripts from this repo at the file's own stamped tag, so local runs and CI
+share one implementation. On upgrades, `make colormath-update REF=vX.Y.Z`
+refreshes both vendored files — keep them in lockstep with your `gates.yml`
+pin, and review the diff like any other dependency bump.
 
 ## Versioning and upgrades
 
-One SemVer tag stream, and consumers pin **exact tags only** (`@v0.4.0`, never
+One SemVer tag stream, and consumers pin **exact tags only** (`@v1.0.0`, never
 a floating major tag): an upgrade should arrive as a reviewable PR whose diff
 and changelog explain themselves — not as a surprise inside an unrelated one.
 
@@ -307,6 +311,7 @@ While on `0.x`, breaking changes may land in any release.
 .claude-plugin/                # plugin marketplace manifest
 plugin/                        # the colormath Claude Code plugin (skills)
 Makefile.colormath             # shared local gate targets — vendored by consumers
+eslint.config.colormath.mjs    # shared eslint base — vendored by consumers
 scripts/                       # gate scripts, fetched by the workflow at its own ref
 example/                       # minimal compliant consumer + contract reference
 docs/                          # adoption notes for the maintainer's own products

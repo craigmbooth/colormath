@@ -7,7 +7,7 @@ name: Gates
 #
 #   jobs:
 #     gates:
-#       uses: ColorMath/ci/.github/workflows/gates.yml@v0.4.0
+#       uses: ColorMath/ci/.github/workflows/gates.yml@v1.0.0
 #       with:
 #         python-version: "3.12"
 #         default-branch: main
@@ -18,7 +18,7 @@ name: Gates
 # secrets (gitleaks), a11y (html-validate), deps (pip-audit), js-deps
 # (npm audit), dockerfile (hadolint), diff-coverage (diff-cover). Register
 # each gate's job name as a required status check in the consumer's branch
-# ruleset. Gates marked opt-in below default to off until the next MAJOR.
+# ruleset. Every gate defaults on; adopt incrementally via enable-* inputs.
 #
 # Per-gate `enable-*` inputs exist so a consumer can adopt incrementally
 # (turn a gate off, burn down its findings, turn it on). A disabled gate shows
@@ -68,7 +68,7 @@ on:
       colormath-ref:
         description: colormath ref to fetch gate scripts from (stamped per release; do not set as a consumer)
         type: string
-        default: "v0.6.0"
+        default: "v1.0.0"
       ruff-spec:
         description: pip requirement spec for ruff (match your pyproject dev pin)
         type: string
@@ -130,21 +130,18 @@ on:
       enable-typecheck:
         type: boolean
         default: true
-      # Opt-in while new (LIFECYCLE new-gate rollout); default-on at the next MAJOR.
       enable-docstrings:
         type: boolean
-        default: false
-      # Opt-in while new (LIFECYCLE new-gate rollout); default-on at the next MAJOR.
+        default: true
       enable-jslint:
         type: boolean
-        default: false
+        default: true
       enable-styles:
         type: boolean
         default: true
-      # Opt-in while new (LIFECYCLE new-gate rollout); default-on at the next MAJOR.
       enable-templates:
         type: boolean
-        default: false
+        default: true
       enable-sast:
         type: boolean
         default: true
@@ -157,14 +154,12 @@ on:
       enable-deps:
         type: boolean
         default: true
-      # Opt-in while new (LIFECYCLE new-gate rollout); default-on at the next MAJOR.
       enable-js-deps:
         type: boolean
-        default: false
-      # Opt-in while new (LIFECYCLE new-gate rollout); default-on at the next MAJOR.
+        default: true
       enable-dockerfile:
         type: boolean
-        default: false
+        default: true
       enable-diff-coverage:
         type: boolean
         default: true
@@ -362,7 +357,7 @@ jobs:
     runs-on: ubuntu-latest
     # interrogate is a pure AST scanner — no project deps needed. Coverage
     # threshold and scope come from [tool.interrogate] in the consumer's
-    # pyproject. Opt-in while new: set enable-docstrings: true (default-on
+    # pyproject.
     # arrives with the next MAJOR).
     defaults:
       run:
@@ -408,10 +403,9 @@ jobs:
     if: ${{ inputs.enable-jslint }}
     runs-on: ubuntu-latest
     # Lints hand-written JS via the consumer's `jslint` npm script (eslint,
-    # configured by the consumer's eslint.config.js). Closes the asymmetry
-    # where Python gets ruff and CSS gets stylelint but JS only gets tests.
-    # Opt-in while new: set enable-jslint: true (default-on arrives with the
-    # next MAJOR).
+    # configured by the consumer's eslint.config.js — a thin caller of the
+    # vendored eslint.config.colormath.mjs base). Closes the asymmetry where
+    # Python gets ruff and CSS gets stylelint but JS only gets tests.
     defaults:
       run:
         working-directory: ${{ inputs.workdir }}
@@ -499,8 +493,7 @@ jobs:
     # djlint understands Jinja itself — unbalanced tags, malformed template
     # syntax — complementing the a11y gate, which validates the rendered-ish
     # HTML but not the Jinja. Pure scan, no project deps; profile and ignores
-    # come from [tool.djlint] in the consumer's pyproject. Opt-in while new:
-    # set enable-templates: true (default-on arrives with the next MAJOR).
+    # come from [tool.djlint] in the consumer's pyproject.
     defaults:
       run:
         working-directory: ${{ inputs.workdir }}
@@ -737,8 +730,7 @@ jobs:
     # The JS half of "audit what ships": npm audit reads package-lock.json
     # directly (no install needed) and --omit=dev keeps dev tooling from ever
     # failing the gate, mirroring the Python deps gate's group scoping.
-    # Opt-in while new: set enable-js-deps: true (default-on arrives with the
-    # next MAJOR).
+
     defaults:
       run:
         working-directory: ${{ inputs.workdir }}
@@ -785,8 +777,7 @@ jobs:
     if: ${{ inputs.enable-dockerfile }}
     runs-on: ubuntu-latest
     # Static lint of the Dockerfile(s) — pinned binary, same install pattern
-    # as gitleaks. Opt-in while new: set enable-dockerfile: true (default-on
-    # arrives with the next MAJOR).
+    # as gitleaks.
     defaults:
       run:
         working-directory: ${{ inputs.workdir }}

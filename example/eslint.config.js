@@ -1,12 +1,5 @@
-import js from "@eslint/js";
+// Thin caller of the vendored colormath eslint base. Customize via factory
+// options or by appending flat-config blocks (later entries win).
+import { colormathConfig } from "./eslint.config.colormath.mjs";
 
-export default [
-  js.configs.recommended,
-  {
-    files: ["static/js/**/*.js"],
-    languageOptions: {
-      ecmaVersion: 2024,
-      sourceType: "module",
-    },
-  },
-];
+export default [...colormathConfig()];

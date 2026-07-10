@@ -12,12 +12,14 @@
 # Contract with the including Makefile:
 #   - `include Makefile.colormath` AFTER any COLORMATH_* overrides
 #   - define a `test` target (your mirror of the tests gate; preflight runs it)
+#   - set COLORMATH_PREFLIGHT_SKIP to the gate targets your gates.yml disables
+#     (keep the two in lockstep), e.g. "templates styles a11y"
 #   - config lives where CI reads it: .colormath/audit.conf, [tool.bandit] /
 #     [tool.interrogate] / [tool.djlint] in pyproject.toml, npm scripts
 #     `jslint`/`styles`/`a11y`, optional .gitleaks.toml
 # ----------------------------------------------------------------------------
 
-COLORMATH_REF = v0.6.0
+COLORMATH_REF = v1.0.0
 COLORMATH_RAW = https://raw.githubusercontent.com/ColorMath/ci/$(COLORMATH_REF)
 
 # Overridable knobs — set before the include if your project differs.
@@ -29,6 +31,7 @@ COLORMATH_DJLINT_PATHS ?= templates/  # space-separated; profile/ignores from [t
 COLORMATH_HADOLINT_DOCKERFILES ?= Dockerfile  # space-separated
 COLORMATH_NPM_AUDIT_LEVEL ?= high     # npm audit failure threshold (prod deps only)
 COLORMATH_RUFF_CHECK_ARGS ?=      # e.g. "--select I" for imports-only lint
+COLORMATH_PREFLIGHT_SKIP ?=       # gate targets preflight omits — mirror your enable-*: false flags
 COLORMATH_DIFF_COVER_BASE ?=      # e.g. origin/master; empty = script default
 COLORMATH_DIFF_COVER_FAIL_UNDER ?=  # e.g. 80; empty = script default (90)
 
@@ -48,22 +51,21 @@ lock-check: ## Gate (part of tests): poetry.lock in sync with pyproject
 typecheck: ## Gate: mypy type check passes
 	poetry run mypy .
 
-# The targets below mirror gates that are opt-in in CI (enable-<gate> defaults
-# to false until the next MAJOR) — not in preflight; run them directly. Each
-# joins preflight when its gate becomes default-on.
-docstrings: ## Gate (opt-in): interrogate docstring coverage ([tool.interrogate] in pyproject)
+docstrings: ## Gate: interrogate docstring coverage ([tool.interrogate] in pyproject)
 	poetry run pip install '$(COLORMATH_INTERROGATE_SPEC)' >/dev/null && poetry run interrogate $(COLORMATH_INTERROGATE_PATHS)
 
-jslint: ## Gate (opt-in): eslint via the jslint npm script
+# jslint expects eslint.config.js to be a thin caller of the vendored
+# eslint.config.colormath.mjs base (refreshed by colormath-update).
+jslint: ## Gate: eslint via the jslint npm script
 	npm run jslint
 
-templates: ## Gate (opt-in): djlint template lint ([tool.djlint] in pyproject)
+templates: ## Gate: djlint template lint ([tool.djlint] in pyproject)
 	poetry run pip install '$(COLORMATH_DJLINT_SPEC)' >/dev/null && poetry run djlint $(COLORMATH_DJLINT_PATHS) --lint
 
-js-audit: ## Gate (opt-in): npm audit CVE scan of shipped JS deps
+js-audit: ## Gate: npm audit CVE scan of shipped JS deps
 	npm audit --omit=dev --audit-level=$(COLORMATH_NPM_AUDIT_LEVEL)
 
-dockerfile: ## Gate (opt-in): hadolint Dockerfile lint
+dockerfile: ## Gate: hadolint Dockerfile lint
 	@command -v hadolint >/dev/null 2>&1 || { echo "hadolint not installed — https://github.com/hadolint/hadolint#install" >&2; exit 1; }
 	hadolint $(COLORMATH_HADOLINT_DOCKERFILES)
 
@@ -104,10 +106,17 @@ coverage-diff: ## Gate: changed lines vs the base branch are covered
 	DIFF_COVER_FAIL_UNDER='$(COLORMATH_DIFF_COVER_FAIL_UNDER)' \
 	bash $$tmp; rc=$$?; rm -f $$tmp; exit $$rc
 
-preflight: format-check lint lock-check typecheck styles sast secrets a11y audit test coverage-diff ## Run every default-on CI gate locally (mirror of gates.yml)
+# Preflight mirrors the full default-on gate suite, minus the targets in
+# COLORMATH_PREFLIGHT_SKIP (which should mirror your enable-*: false flags).
+COLORMATH_PREFLIGHT_GATES = format-check lint lock-check typecheck docstrings \
+	jslint styles templates sast secrets a11y audit js-audit dockerfile \
+	test coverage-diff
+
+preflight: $(filter-out $(COLORMATH_PREFLIGHT_SKIP),$(COLORMATH_PREFLIGHT_GATES)) ## Run every enabled CI gate locally (mirror of gates.yml)
 	@echo "All gates passed."
 
-colormath-update: ## Refresh this file: make colormath-update REF=vX.Y.Z
+colormath-update: ## Refresh the vendored colormath files: make colormath-update REF=vX.Y.Z
 	@test -n "$(REF)" || { echo "usage: make colormath-update REF=vX.Y.Z" >&2; exit 1; }
 	curl -fsSL "https://raw.githubusercontent.com/ColorMath/ci/$(REF)/Makefile.colormath" -o Makefile.colormath
-	@echo "Makefile.colormath refreshed to $(REF) — bump the gates.yml pin to match."
+	curl -fsSL "https://raw.githubusercontent.com/ColorMath/ci/$(REF)/eslint.config.colormath.mjs" -o eslint.config.colormath.mjs
+	@echo "Makefile.colormath + eslint.config.colormath.mjs refreshed to $(REF) — bump the gates.yml pin to match."

@@ -5,6 +5,54 @@ one SemVer stream, exact-tag pins, MAJOR = anything that can turn a consumer's
 green CI red without the consumer editing anything. While on `0.x`, breaking
 changes may land in any release.
 
+## v1.0.0 — 2026-07-10
+
+**MAJOR — pins are now contractual.** Two breaking changes: every gate now
+defaults **on** (the five formerly-opt-in gates — `docstrings`, `jslint`,
+`templates`, `js-deps`, `dockerfile` — flip to `enable-*: true`), and the
+`jslint` contract now expects the vendored shared eslint base.
+
+### Added
+
+- **`eslint.config.colormath.mjs`**: the shared eslint base, vendored by
+  consumers alongside `Makefile.colormath` (both refreshed by
+  `make colormath-update`). Exposes a `colormathConfig()` factory —
+  `files`, `testFiles`, `cdnGlobals`, `rules` — with appended flat-config
+  blocks as the escape hatch (later entries win) and ejecting as sanctioned
+  divergence. Consumer `eslint.config.js` becomes a thin caller; devDeps
+  contract: `eslint`, `@eslint/js`, `globals`.
+- `Makefile.colormath`: `COLORMATH_PREFLIGHT_SKIP` knob — `preflight` now
+  runs the full fourteen-gate mirror minus the listed targets; keep it in
+  lockstep with your caller's `enable-*: false` flags.
+
+### Changed
+
+- All `enable-<gate>` inputs default `true`. A consumer that never set the
+  opt-in flags gets five new gates on its next bump — disable any that are
+  red and burn down on your schedule.
+- `colormath-update` refreshes both vendored files.
+
+### Upgrade notes
+
+Paste into Claude Code in each consumer repo:
+
+> Bump colormath to v1.0.0: update the `gates.yml` `uses:` pin (and
+> `review.yaml` if present) to `@v1.0.0` and run
+> `make colormath-update REF=v1.0.0` (now refreshes Makefile.colormath AND
+> eslint.config.colormath.mjs). All gates default on at v1.0.0: delete any
+> now-redundant `enable-*: true` lines, and add an explicit
+> `enable-<gate>: false` for every gate this repo isn't ready for (check the
+> caller's comments for the current burn-down list — at minimum `templates`
+> everywhere, plus `styles`/`a11y` in runwayz). Set
+> `COLORMATH_PREFLIGHT_SKIP` in the root Makefile (before the include) to
+> the same list so `make preflight` mirrors CI. Rewrite `eslint.config.js`
+> as a thin caller of the vendored base per its header — move this repo's
+> CDN globals into `cdnGlobals`, file globs into `files`, and keep any
+> special-file blocks (e.g. worklet globals) as appended entries; ensure
+> devDeps `eslint`, `@eslint/js`, `globals`. Verify locally:
+> `npm run jslint`, `poetry check --lock`, `make audit`, then open the bump
+> PR.
+
 ## v0.6.0 — 2026-07-10
 
 MINOR: four new gates, all shipped **opt-in** per the new-gate rollout rule —
