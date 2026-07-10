@@ -27,4 +27,9 @@ jobs:
       python-version: "3.12"
       default-branch: main
       colormath-ref: ${{ github.sha }}
-      enable-docstrings: true  # opt-in gate, but the self-test exercises everything
+      # Opt-in gates, but the self-test exercises everything.
+      enable-docstrings: true
+      enable-jslint: true
+      enable-templates: true
+      enable-js-deps: true
+      enable-dockerfile: true

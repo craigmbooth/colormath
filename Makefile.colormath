@@ -12,23 +12,29 @@
 # Contract with the including Makefile:
 #   - `include Makefile.colormath` AFTER any COLORMATH_* overrides
 #   - define a `test` target (your mirror of the tests gate; preflight runs it)
-#   - config lives where CI reads it: .colormath/audit.conf, [tool.bandit] in
-#     pyproject.toml, npm scripts `styles`/`a11y`, optional .gitleaks.toml
+#   - config lives where CI reads it: .colormath/audit.conf, [tool.bandit] /
+#     [tool.interrogate] / [tool.djlint] in pyproject.toml, npm scripts
+#     `jslint`/`styles`/`a11y`, optional .gitleaks.toml
 # ----------------------------------------------------------------------------
 
-COLORMATH_REF = v0.5.0
+COLORMATH_REF = v0.6.0
 COLORMATH_RAW = https://raw.githubusercontent.com/ColorMath/ci/$(COLORMATH_REF)
 
 # Overridable knobs — set before the include if your project differs.
 COLORMATH_BANDIT_SPEC ?= bandit>=1.9,<2
 COLORMATH_INTERROGATE_SPEC ?= interrogate>=1.7,<2
 COLORMATH_INTERROGATE_PATHS ?= .      # space-separated; scoped by [tool.interrogate] excludes
+COLORMATH_DJLINT_SPEC ?= djlint>=1.36,<2
+COLORMATH_DJLINT_PATHS ?= templates/  # space-separated; profile/ignores from [tool.djlint]
+COLORMATH_HADOLINT_DOCKERFILES ?= Dockerfile  # space-separated
+COLORMATH_NPM_AUDIT_LEVEL ?= high     # npm audit failure threshold (prod deps only)
 COLORMATH_RUFF_CHECK_ARGS ?=      # e.g. "--select I" for imports-only lint
 COLORMATH_DIFF_COVER_BASE ?=      # e.g. origin/master; empty = script default
 COLORMATH_DIFF_COVER_FAIL_UNDER ?=  # e.g. 80; empty = script default (90)
 
-.PHONY: format-check lint typecheck docstrings styles sast secrets a11y audit \
-	coverage-diff preflight colormath-update
+.PHONY: format-check lint lock-check typecheck docstrings jslint styles \
+	templates sast secrets a11y audit js-audit dockerfile coverage-diff \
+	preflight colormath-update
 
 format-check: ## Gate: ruff formatting is clean
 	poetry run ruff format --check .
@@ -36,14 +42,30 @@ format-check: ## Gate: ruff formatting is clean
 lint: ## Gate: ruff lint passes
 	poetry run ruff check $(COLORMATH_RUFF_CHECK_ARGS) .
 
+lock-check: ## Gate (part of tests): poetry.lock in sync with pyproject
+	poetry check --lock
+
 typecheck: ## Gate: mypy type check passes
 	poetry run mypy .
 
-# Not in preflight while the CI gate is opt-in (enable-docstrings defaults to
-# false until the next MAJOR) — run it directly; it joins preflight when the
-# gate becomes default-on.
-docstrings: ## Gate: interrogate docstring coverage ([tool.interrogate] in pyproject)
+# The targets below mirror gates that are opt-in in CI (enable-<gate> defaults
+# to false until the next MAJOR) — not in preflight; run them directly. Each
+# joins preflight when its gate becomes default-on.
+docstrings: ## Gate (opt-in): interrogate docstring coverage ([tool.interrogate] in pyproject)
 	poetry run pip install '$(COLORMATH_INTERROGATE_SPEC)' >/dev/null && poetry run interrogate $(COLORMATH_INTERROGATE_PATHS)
+
+jslint: ## Gate (opt-in): eslint via the jslint npm script
+	npm run jslint
+
+templates: ## Gate (opt-in): djlint template lint ([tool.djlint] in pyproject)
+	poetry run pip install '$(COLORMATH_DJLINT_SPEC)' >/dev/null && poetry run djlint $(COLORMATH_DJLINT_PATHS) --lint
+
+js-audit: ## Gate (opt-in): npm audit CVE scan of shipped JS deps
+	npm audit --omit=dev --audit-level=$(COLORMATH_NPM_AUDIT_LEVEL)
+
+dockerfile: ## Gate (opt-in): hadolint Dockerfile lint
+	@command -v hadolint >/dev/null 2>&1 || { echo "hadolint not installed — https://github.com/hadolint/hadolint#install" >&2; exit 1; }
+	hadolint $(COLORMATH_HADOLINT_DOCKERFILES)
 
 styles: ## Gate: CSS uses design tokens (no hardcoded colors/font-sizes)
 	npm run styles
@@ -82,7 +104,7 @@ coverage-diff: ## Gate: changed lines vs the base branch are covered
 	DIFF_COVER_FAIL_UNDER='$(COLORMATH_DIFF_COVER_FAIL_UNDER)' \
 	bash $$tmp; rc=$$?; rm -f $$tmp; exit $$rc
 
-preflight: format-check lint typecheck styles sast secrets a11y audit test coverage-diff ## Run every CI gate locally (mirror of gates.yml)
+preflight: format-check lint lock-check typecheck styles sast secrets a11y audit test coverage-diff ## Run every default-on CI gate locally (mirror of gates.yml)
 	@echo "All gates passed."
 
 colormath-update: ## Refresh this file: make colormath-update REF=vX.Y.Z
