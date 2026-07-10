@@ -154,6 +154,23 @@ nothing changes). It runs two Claude agents in parallel on every non-draft PR
   machine-readable verdict (`qa_depth`, `requires_ui_qa`, `requires_api_qa`)
   as workflow outputs for downstream QA jobs to gate on.
 
+### Installing the review suite
+
+Both agents run via `anthropics/claude-code-action`, which needs more than
+the caller file — do these once per repo, in order:
+
+1. **Install the [Claude GitHub App](https://github.com/apps/claude)** on the
+   repo (or org). The action exchanges OIDC (`id-token: write`) for an app
+   token and posts its comments as `claude[bot]` — without the app installed,
+   the agents cannot authenticate to GitHub and the jobs fail at startup.
+2. **Add the API key secret**:
+   `gh secret set ANTHROPIC_API_KEY --repo <owner>/<repo>`
+   (an Anthropic API key with access to the model you configure; both agents
+   share it).
+3. **Add the caller workflow** below, pinned to an exact tag.
+4. Optionally set `review-focus` to point the reviewer at your project's
+   sensitive surfaces — without it the review is generic.
+
 ```yaml
 name: claude-review
 
