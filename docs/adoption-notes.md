@@ -4,7 +4,7 @@ Working notes for migrating the maintainer's own products onto the gates
 channel. Adoption order is always talas (canary) → intendent → runwayz
 (see [LIFECYCLE.md](../LIFECYCLE.md)).
 
-## talas — done (talas-app/talas#63, @v0.4.0; plugin enabled via .claude/settings.json, no review workflow yet)
+## talas — done (talas-app/talas#63, @v0.5.0 as of #67; plugin enabled via .claude/settings.json, no review workflow yet)
 
 `default-branch: main`, `poetry-install-args: "--with webapp,worker"`,
 `ruff-spec` matching pyproject's `^0.14.8` pin. `scripts/diff-coverage.sh` and
@@ -18,7 +18,7 @@ mirrors come from a vendored `Makefile.colormath` (repo Makefile just
 `include`s it and defines `test`). No branch protection to update (private
 repo, free plan).
 
-## intendent — done (craigmbooth/intendent#71, @v0.4.0)
+## intendent — done (craigmbooth/intendent#71, @v0.5.0 as of #72)
 
 - Vendor `Makefile.colormath`; set `COLORMATH_RUFF_CHECK_ARGS = --select I` and
   `COLORMATH_DIFF_COVER_BASE = origin/master` before the include
@@ -29,17 +29,25 @@ repo, free plan).
 - Port the pip hack from the tests job into `.colormath/ci-extra-install.sh`
 - Move the starlette/torch CVE allowlist (with justifications) into
   `.colormath/audit.conf`
+- **Ruleset gotcha (fixed 2026-07-09):** the "Master" ruleset still required
+  the pre-colormath check names (no `gates / ` prefix), which never report
+  under the suite — every PR showed the old names stuck "Expected" and was
+  unmergeable without bypass. Required contexts now match the suite's
+  `gates / <job name>` output. When adopting, always re-register the ruleset
+  contexts, not just the workflow.
+- Comment triggers (`issue_comment`/`pull_request_review_comment`) removed
+  from the review caller (#73): every PR comment — including the review's own
+  two bot comments — spawned a run that instantly skipped (ghost runs).
+  Re-run reviews from the Actions UI or draft→ready instead of `@claude`.
 
-## runwayz — next (and last)
+## runwayz — done (PorticoFoundry/runwayz#283, @v0.5.0)
 
-- Replace the older `ci.yml` wholesale. Expect red on gates it never ran —
-  land the caller with `enable-a11y: false`, `enable-deps: false`,
-  `enable-diff-coverage: false`, `enable-styles: false`, then burn down and
-  enable gate by gate.
-- Add the `styles`/`a11y` npm scripts (copy from
-  [example/package.json](../example/package.json)).
-- Once on ≥v0.5.0, fold the carried-over `docstrings` sibling job into the
-  suite: set `enable-docstrings: true` and either
+- Replaced the older `ci.yml` wholesale. Landed with `enable-styles: false`
+  and `enable-a11y: false` (no stylelint/html-validate tooling yet) — burn
+  down and enable gate by gate; add the `styles`/`a11y` npm scripts from
+  [example/package.json](../example/package.json) when doing so.
+- The old docstring-coverage sibling job folded into the suite's
+  `docstrings` gate: `enable-docstrings: true` +
   `interrogate-paths: "core/ models/ routes/ services/ adapters/ schemas/ scripts/ jobs/"`
-  or scan `.` and move the scope into `[tool.interrogate]` excludes. The
-  `build-css` sibling job stays project-side — colormath has no gate for it.
+  (mirrored locally via `COLORMATH_INTERROGATE_PATHS`). The `build-css`
+  sibling job stays project-side — colormath has no gate for it.

@@ -134,7 +134,9 @@ All inputs are optional.
 
 Once the checks are green, register each gate's job name as a required status
 check in your branch protection (they appear as `gates / Ruff (format + lint)`
-and so on).
+and so on) — and **remove the required contexts left over from your
+pre-colormath workflow**. Old names never report under the suite, so each one
+pins every PR at "Expected — waiting for status" and blocks merging.
 
 ## Optional: AI review + test plan
 
@@ -180,6 +182,13 @@ jobs:
 Inputs: `model` (default `claude-sonnet-4-6`), `review-focus` (extra
 project-specific emphasis for the reviewer), and `enable-review` /
 `enable-test-plan` toggles. Requires an `ANTHROPIC_API_KEY` repo secret.
+
+The `issue_comment` / `pull_request_review_comment` triggers are what enable
+`@claude` re-runs, but they come with noise: GitHub can't filter comment
+events by body at the trigger level, so **every** PR comment — including the
+review's own two bot comments — creates a run that immediately skips. If you
+prefer a quiet Actions tab, keep only the `pull_request` trigger and re-run
+reviews from the Actions UI (or flip the PR draft → ready).
 
 ## Optional: Claude Code plugin
 
