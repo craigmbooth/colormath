@@ -2,17 +2,18 @@
 
 [![CI](https://github.com/ColorMath/ci/actions/workflows/ci.yml/badge.svg)](https://github.com/ColorMath/ci/actions/workflows/ci.yml)
 
-**Ten CI quality gates for Python web apps, in one `uses:` line.**
+**Fourteen CI quality gates for Python web apps, in one `uses:` line.**
 
 colormath is a reusable GitHub Actions workflow (plus the scripts and composite
 actions behind it) that gives a Poetry-managed Python project a complete,
-parallel CI gate suite: formatting, lint, types, docstrings, tests, security,
-secrets, accessibility, dependency CVEs, and per-change test coverage.
+parallel CI gate suite: formatting, lint (Python and JS), types, docstrings,
+tests, template lint, security, secrets, accessibility, dependency CVEs
+(Python and JS), Dockerfile lint, and per-change test coverage.
 
 It grew out of a family of FastAPI + Poetry + Jinja/Tailwind apps deployed on
 Cloud Run, but the gates apply to most Poetry projects — the JS-based gates
-(frontend tests, CSS lint, template accessibility) are driven by npm scripts
-you define, and any gate can be switched off.
+(frontend tests, JS lint, CSS lint, template accessibility) are driven by npm
+scripts you define, and any gate can be switched off.
 
 ## Quick start
 
@@ -33,14 +34,15 @@ concurrency:
 
 jobs:
   gates:
-    uses: ColorMath/ci/.github/workflows/gates.yml@v0.4.0
+    uses: ColorMath/ci/.github/workflows/gates.yml@v0.6.0
     with:
       python-version: "3.12"
       default-branch: main
 ```
 
-Open a pull request and you'll get nine parallel checks (ten once you opt in
-to `docstrings`, which is off by default while new), each posting a compact
+Open a pull request and you'll get nine parallel checks — fourteen once you
+opt in to the gates that are off by default while new (`docstrings`,
+`jslint`, `templates`, `js-deps`, `dockerfile`) — each posting a compact
 stats block to the run summary. Project-specific jobs (deploys,
 previews, seeding) stay in your repo as siblings that gate on the suite:
 
@@ -60,14 +62,18 @@ suite against it on every PR.
 | Gate | Tool | Enforces |
 |---|---|---|
 | `ruff` | [ruff](https://docs.astral.sh/ruff/) | formatting + lint |
-| `tests` | vitest + pytest | JS and Python suites green |
+| `tests` | vitest + pytest | `poetry.lock` in sync with pyproject, then JS and Python suites green |
 | `typecheck` | [mypy](https://mypy-lang.org/) | type checks pass |
 | `docstrings` | [interrogate](https://interrogate.readthedocs.io/) | docstring coverage ≥ your `[tool.interrogate]` fail-under — **opt-in** until the next MAJOR |
+| `jslint` | [eslint](https://eslint.org/) | hand-written JS passes lint — **opt-in** until the next MAJOR |
 | `styles` | [stylelint](https://stylelint.io/) | design tokens only — no hardcoded colors/font-sizes |
+| `templates` | [djlint](https://djlint.com/) | Jinja templates are well-formed (per `[tool.djlint]`) — **opt-in** until the next MAJOR |
 | `sast` | [bandit](https://bandit.readthedocs.io/) | no Medium+ security findings in app source |
 | `secrets` | [gitleaks](https://github.com/gitleaks/gitleaks) | no secrets anywhere in git history |
 | `a11y` | [html-validate](https://html-validate.org/) | templates pass the a11y preset |
 | `deps` | [pip-audit](https://pypi.org/project/pip-audit/) | locked, shipped deps have no actionable CVEs |
+| `js-deps` | npm audit | locked, shipped JS deps have no high+ CVEs — **opt-in** until the next MAJOR |
+| `dockerfile` | [hadolint](https://github.com/hadolint/hadolint) | Dockerfile best practices — **opt-in** until the next MAJOR |
 | `diff-coverage` | [diff-cover](https://github.com/Bachmann1234/diff_cover) | changed lines ≥90% covered |
 
 Two design choices worth calling out:
@@ -76,9 +82,10 @@ Two design choices worth calling out:
   *changed* to be covered. It never fails on pre-existing untested code, so
   you can adopt it on day one of a legacy codebase and ratchet quality up one
   PR at a time.
-- **`deps` audits what ships.** Locked versions are exported from
-  `poetry.lock` for the production dependency groups only — dev tooling never
-  triggers a CVE failure, and local runs audit exactly what CI audits.
+- **`deps` and `js-deps` audit what ships.** Locked versions are exported
+  from `poetry.lock` for the production dependency groups only, and npm audit
+  runs with `--omit=dev` — dev tooling never triggers a CVE failure, and
+  local runs audit exactly what CI audits.
 
 ## Adopting incrementally
 
@@ -87,7 +94,7 @@ existing findings, land the caller with the failing gates disabled, burn the
 findings down, and enable them one by one:
 
 ```yaml
-    uses: ColorMath/ci/.github/workflows/gates.yml@v0.4.0
+    uses: ColorMath/ci/.github/workflows/gates.yml@v0.6.0
     with:
       python-version: "3.12"
       default-branch: main
@@ -116,9 +123,14 @@ All inputs are optional.
 | `interrogate-spec` | `"interrogate>=1.7,<2"` | pip spec for interrogate — match your pyproject pin |
 | `interrogate-paths` | `"."` | space-separated paths for interrogate; scoped by `[tool.interrogate]` excludes |
 | `gitleaks-version` | `"8.30.1"` | gitleaks release to install |
+| `djlint-spec` | `"djlint>=1.36,<2"` | pip spec for djlint — match your pyproject pin |
+| `djlint-paths` | `"templates/"` | space-separated template paths for djlint; profile/ignores from `[tool.djlint]` |
+| `hadolint-version` | `"2.14.0"` | hadolint release to install |
+| `hadolint-dockerfiles` | `"Dockerfile"` | space-separated Dockerfile paths to lint |
+| `npm-audit-level` | `"high"` | severity at which npm audit fails the `js-deps` gate |
 | `diff-cover-fail-under` | `"90"` | Minimum % coverage on changed lines |
 | `free-disk-space` | `false` | Reclaim runner disk first (heavy ML dependency trees) |
-| `enable-<gate>` | `true` (`enable-docstrings`: `false`) | Per-gate opt-out (see above); new gates ship opt-in |
+| `enable-<gate>` | `true` (opt-in gates: `false`) | Per-gate opt-out (see above); new gates (`docstrings`, `jslint`, `templates`, `js-deps`, `dockerfile`) ship opt-in |
 
 ### Files in your repo
 
@@ -126,8 +138,11 @@ All inputs are optional.
 |---|---|---|
 | `pyproject.toml` with `[tool.bandit]` | `sast` | scan scope/excludes (plus your mypy/ruff config as usual) |
 | `pyproject.toml` with `[tool.interrogate]` | `docstrings` | coverage threshold (`fail-under`) + excludes |
+| `pyproject.toml` with `[tool.djlint]` | `templates` | djlint profile (e.g. `jinja`) + rule ignores |
 | `.colormath/audit.conf` | `deps` | poetry groups that ship + CVE allowlist ([reference](example/.colormath/audit.conf)) |
-| npm scripts `test`, `styles`, `a11y` | the JS gates | see [example/package.json](example/package.json) |
+| npm scripts `test`, `jslint`, `styles`, `a11y` | the JS gates | see [example/package.json](example/package.json) |
+| `eslint.config.js` | `jslint` | eslint flat config ([reference](example/eslint.config.js)) |
+| `Dockerfile` | `dockerfile` | linted by hadolint ([reference](example/Dockerfile)) |
 | `.colormath/ci.env` | optional | non-secret env sourced before pytest in CI |
 | `.colormath/ci-extra-install.sh` | optional | extra install steps after `poetry install` (must be executable) |
 | `.gitleaks.toml` | optional | gitleaks false-positive allowlist, used when present |
@@ -184,7 +199,7 @@ on:
 
 jobs:
   review:
-    uses: ColorMath/ci/.github/workflows/review.yml@v0.4.0
+    uses: ColorMath/ci/.github/workflows/review.yml@v0.6.0
     permissions:
       contents: read
       pull-requests: write
@@ -246,7 +261,7 @@ or have a consumer repo offer it to everyone who opens it, via
 so all consumers share the same `make` endpoints. Vendor it once:
 
 ```sh
-curl -fsSLO https://raw.githubusercontent.com/ColorMath/ci/v0.4.0/Makefile.colormath
+curl -fsSLO https://raw.githubusercontent.com/ColorMath/ci/v0.6.0/Makefile.colormath
 ```
 
 then include it from your Makefile, providing the one target it expects from
@@ -260,10 +275,11 @@ test: ## your mirror of the tests gate
 	poetry run pytest tests/ && npm test
 ```
 
-Now `make format-check lint typecheck styles sast secrets a11y audit
-coverage-diff` mirror the CI gates one-for-one, and `make preflight` runs the
-whole suite. `make docstrings` mirrors the opt-in docstrings gate — it stays
-out of `preflight` until that gate becomes default-on. The `audit` and `coverage-diff` targets fetch their gate scripts
+Now `make format-check lint lock-check typecheck styles sast secrets a11y
+audit coverage-diff` mirror the CI gates one-for-one, and `make preflight`
+runs the whole default-on suite. The opt-in gates have mirrors too — `make
+docstrings jslint templates js-audit dockerfile` — which stay out of
+`preflight` until their gates become default-on. The `audit` and `coverage-diff` targets fetch their gate scripts
 from this repo at the file's own stamped tag, so local runs and CI share one
 implementation. On upgrades, `make colormath-update REF=vX.Y.Z` refreshes the
 vendored file — keep it in lockstep with your `gates.yml` pin, and review the

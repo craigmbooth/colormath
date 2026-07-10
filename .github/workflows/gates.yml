@@ -12,11 +12,13 @@ name: Gates
 #         python-version: "3.12"
 #         default-branch: main
 #
-# Ten parallel gates: ruff, tests (JS + Python), typecheck (mypy),
-# docstrings (interrogate; opt-in until the next MAJOR), styles (stylelint),
-# sast (bandit), secrets (gitleaks), a11y (html-validate), deps (pip-audit),
-# diff-coverage (diff-cover). Register each gate's job name as a required
-# status check in the consumer's branch ruleset.
+# Fourteen parallel gates: ruff, tests (JS + Python, plus a
+# poetry-lock-in-sync check), typecheck (mypy), docstrings (interrogate),
+# jslint (eslint), styles (stylelint), templates (djlint), sast (bandit),
+# secrets (gitleaks), a11y (html-validate), deps (pip-audit), js-deps
+# (npm audit), dockerfile (hadolint), diff-coverage (diff-cover). Register
+# each gate's job name as a required status check in the consumer's branch
+# ruleset. Gates marked opt-in below default to off until the next MAJOR.
 #
 # Per-gate `enable-*` inputs exist so a consumer can adopt incrementally
 # (turn a gate off, burn down its findings, turn it on). A disabled gate shows
@@ -29,8 +31,11 @@ name: Gates
 #   .gitleaks.toml          gitleaks allowlist (used when present)
 #   [tool.bandit]           in pyproject.toml (bandit scan scope/excludes)
 #   [tool.interrogate]      in pyproject.toml (docstring threshold/excludes)
-#   npm scripts             "test" (vitest), "styles" (stylelint),
-#                           "a11y" (html-validate) — JS gates need them
+#   [tool.djlint]           in pyproject.toml (profile/ignores for templates)
+#   npm scripts             "test" (vitest), "jslint" (eslint), "styles"
+#                           (stylelint), "a11y" (html-validate) — JS gates
+#                           need them
+#   Dockerfile              linted by the dockerfile gate (hadolint)
 #
 # Every job ends with a "gate summary" that appends a compact stats block to
 # $GITHUB_STEP_SUMMARY, so the whole gate matrix is legible at a glance.
@@ -63,7 +68,7 @@ on:
       colormath-ref:
         description: colormath ref to fetch gate scripts from (stamped per release; do not set as a consumer)
         type: string
-        default: "v0.5.0"
+        default: "v0.6.0"
       ruff-spec:
         description: pip requirement spec for ruff (match your pyproject dev pin)
         type: string
@@ -88,6 +93,26 @@ on:
         description: gitleaks release to install
         type: string
         default: "8.30.1"
+      djlint-spec:
+        description: pip requirement spec for djlint (match your pyproject dev pin)
+        type: string
+        default: "djlint>=1.36,<2"
+      djlint-paths:
+        description: Space-separated template paths for djlint to lint; profile/ignores come from [tool.djlint]
+        type: string
+        default: "templates/"
+      hadolint-version:
+        description: hadolint release to install
+        type: string
+        default: "2.14.0"
+      hadolint-dockerfiles:
+        description: Space-separated Dockerfile paths for the dockerfile gate
+        type: string
+        default: "Dockerfile"
+      npm-audit-level:
+        description: Severity at which npm audit fails the js-deps gate (low/moderate/high/critical)
+        type: string
+        default: "high"
       diff-cover-fail-under:
         description: Minimum coverage percent for changed lines
         type: string
@@ -109,9 +134,17 @@ on:
       enable-docstrings:
         type: boolean
         default: false
+      # Opt-in while new (LIFECYCLE new-gate rollout); default-on at the next MAJOR.
+      enable-jslint:
+        type: boolean
+        default: false
       enable-styles:
         type: boolean
         default: true
+      # Opt-in while new (LIFECYCLE new-gate rollout); default-on at the next MAJOR.
+      enable-templates:
+        type: boolean
+        default: false
       enable-sast:
         type: boolean
         default: true
@@ -124,6 +157,14 @@ on:
       enable-deps:
         type: boolean
         default: true
+      # Opt-in while new (LIFECYCLE new-gate rollout); default-on at the next MAJOR.
+      enable-js-deps:
+        type: boolean
+        default: false
+      # Opt-in while new (LIFECYCLE new-gate rollout); default-on at the next MAJOR.
+      enable-dockerfile:
+        type: boolean
+        default: false
       enable-diff-coverage:
         type: boolean
         default: true
@@ -222,6 +263,11 @@ jobs:
           python-version: ${{ inputs.python-version }}
           workdir: ${{ inputs.workdir }}
           cache-suffix: tests
+
+      # Catches pyproject/poetry.lock drift up front, where the failure is
+      # legible — instead of deep inside some gate's `poetry install`.
+      - name: Check lockfile is in sync with pyproject
+        run: poetry check --lock 2>&1 | tee /tmp/poetry-check.log
 
       - name: Install Python dependencies
         run: poetry install --no-interaction --no-root ${{ inputs.poetry-install-args }}
@@ -357,6 +403,52 @@ jobs:
             result=$(grep -m1 -oE 'RESULT: [A-Z]+ \(minimum: [0-9.]+%, actual: [0-9.]+%\)' /tmp/interrogate.log 2>/dev/null || echo 'see log')
             echo "- ${result}"
 
+  jslint:
+    name: JS Lint (eslint)
+    if: ${{ inputs.enable-jslint }}
+    runs-on: ubuntu-latest
+    # Lints hand-written JS via the consumer's `jslint` npm script (eslint,
+    # configured by the consumer's eslint.config.js). Closes the asymmetry
+    # where Python gets ruff and CSS gets stylelint but JS only gets tests.
+    # Opt-in while new: set enable-jslint: true (default-on arrives with the
+    # next MAJOR).
+    defaults:
+      run:
+        working-directory: ${{ inputs.workdir }}
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v6
+
+      - name: Check out colormath (gate tooling)
+        uses: actions/checkout@v6
+        with:
+          repository: ColorMath/ci
+          ref: ${{ inputs.colormath-ref }}
+          path: .colormath-lib
+          sparse-checkout: |
+            scripts
+            .github
+
+      - name: Set up Node + JS dependencies
+        uses: ./.colormath-lib/.github/actions/setup-node
+        with:
+          node-version: ${{ inputs.node-version }}
+          workdir: ${{ inputs.workdir }}
+
+      - name: Lint JS
+        run: npm run jslint 2>&1 | tee /tmp/jslint.log
+
+      - name: Gate summary
+        if: always()
+        uses: ./.colormath-lib/.github/actions/gate-summary
+        with:
+          title: "🟨 JS Lint (eslint)"
+          status: ${{ job.status }}
+          log-files: /tmp/jslint.log
+          stats: |
+            problems=$(grep -m1 -oE '[0-9]+ problems?' /tmp/jslint.log 2>/dev/null || echo '0 problems')
+            echo "- Findings: ${problems}"
+
   styles:
     name: CSS Style (stylelint)
     if: ${{ inputs.enable-styles }}
@@ -399,6 +491,54 @@ jobs:
           stats: |
             problems=$(grep -cE '✖|problem' /tmp/styles.log 2>/dev/null || true)
             echo "- Problem lines: ${problems:-0}"
+
+  templates:
+    name: Template lint (djlint)
+    if: ${{ inputs.enable-templates }}
+    runs-on: ubuntu-latest
+    # djlint understands Jinja itself — unbalanced tags, malformed template
+    # syntax — complementing the a11y gate, which validates the rendered-ish
+    # HTML but not the Jinja. Pure scan, no project deps; profile and ignores
+    # come from [tool.djlint] in the consumer's pyproject. Opt-in while new:
+    # set enable-templates: true (default-on arrives with the next MAJOR).
+    defaults:
+      run:
+        working-directory: ${{ inputs.workdir }}
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v6
+
+      - name: Check out colormath (gate tooling)
+        uses: actions/checkout@v6
+        with:
+          repository: ColorMath/ci
+          ref: ${{ inputs.colormath-ref }}
+          path: .colormath-lib
+          sparse-checkout: |
+            scripts
+            .github
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: Install djlint
+        run: pip install '${{ inputs.djlint-spec }}'
+
+      - name: Lint templates
+        run: djlint ${{ inputs.djlint-paths }} --lint 2>&1 | tee /tmp/djlint.log
+
+      - name: Gate summary
+        if: always()
+        uses: ./.colormath-lib/.github/actions/gate-summary
+        with:
+          title: "🧩 Template lint (djlint)"
+          status: ${{ job.status }}
+          log-files: /tmp/djlint.log
+          stats: |
+            result=$(grep -m1 -oE 'Linted [0-9]+ files?, found [0-9]+ errors?' /tmp/djlint.log 2>/dev/null || echo 'see log')
+            echo "- ${result}"
 
   sast:
     name: Security SAST (bandit)
@@ -589,6 +729,102 @@ jobs:
           stats: |
             verdict=$(grep -m1 -oE 'No known vulnerabilities found|Found [0-9]+ known vulnerabilit[a-z]*' /tmp/audit.log 2>/dev/null || echo 'see log')
             echo "- Verdict: ${verdict}"
+
+  js-deps:
+    name: JS dependency CVEs (npm audit)
+    if: ${{ inputs.enable-js-deps }}
+    runs-on: ubuntu-latest
+    # The JS half of "audit what ships": npm audit reads package-lock.json
+    # directly (no install needed) and --omit=dev keeps dev tooling from ever
+    # failing the gate, mirroring the Python deps gate's group scoping.
+    # Opt-in while new: set enable-js-deps: true (default-on arrives with the
+    # next MAJOR).
+    defaults:
+      run:
+        working-directory: ${{ inputs.workdir }}
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v6
+
+      - name: Check out colormath (gate tooling)
+        uses: actions/checkout@v6
+        with:
+          repository: ColorMath/ci
+          ref: ${{ inputs.colormath-ref }}
+          path: .colormath-lib
+          sparse-checkout: |
+            scripts
+            .github
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: Audit locked JS dependencies for CVEs
+        run: |
+          if [ -f package-lock.json ]; then
+            npm audit --omit=dev --audit-level='${{ inputs.npm-audit-level }}' 2>&1 | tee /tmp/npm-audit.log
+          else
+            echo "no package-lock.json — npm audit skipped" | tee /tmp/npm-audit.log
+          fi
+
+      - name: Gate summary
+        if: always()
+        uses: ./.colormath-lib/.github/actions/gate-summary
+        with:
+          title: "📦 JS dependency CVEs (npm audit)"
+          status: ${{ job.status }}
+          log-files: /tmp/npm-audit.log
+          stats: |
+            verdict=$(grep -m1 -oE 'found [0-9]+ vulnerabilities|[0-9]+ (low|moderate|high|critical)[a-z ,()]*vulnerabilit[a-z]+|npm audit skipped' /tmp/npm-audit.log 2>/dev/null || echo 'see log')
+            echo "- Verdict: ${verdict} (fails at ${{ inputs.npm-audit-level }}+, prod deps only)"
+
+  dockerfile:
+    name: Dockerfile lint (hadolint)
+    if: ${{ inputs.enable-dockerfile }}
+    runs-on: ubuntu-latest
+    # Static lint of the Dockerfile(s) — pinned binary, same install pattern
+    # as gitleaks. Opt-in while new: set enable-dockerfile: true (default-on
+    # arrives with the next MAJOR).
+    defaults:
+      run:
+        working-directory: ${{ inputs.workdir }}
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v6
+
+      - name: Check out colormath (gate tooling)
+        uses: actions/checkout@v6
+        with:
+          repository: ColorMath/ci
+          ref: ${{ inputs.colormath-ref }}
+          path: .colormath-lib
+          sparse-checkout: |
+            scripts
+            .github
+
+      - name: Install hadolint
+        working-directory: .
+        run: |
+          sudo curl -fsSL -o /usr/local/bin/hadolint \
+            "https://github.com/hadolint/hadolint/releases/download/v${{ inputs.hadolint-version }}/hadolint-linux-x86_64"
+          sudo chmod +x /usr/local/bin/hadolint
+
+      - name: Lint Dockerfiles
+        run: hadolint ${{ inputs.hadolint-dockerfiles }} 2>&1 | tee /tmp/hadolint.log
+
+      - name: Gate summary
+        if: always()
+        uses: ./.colormath-lib/.github/actions/gate-summary
+        with:
+          title: "🐳 Dockerfile lint (hadolint)"
+          status: ${{ job.status }}
+          log-files: /tmp/hadolint.log
+          stats: |
+            findings=$(grep -cE 'DL[0-9]+|SC[0-9]+' /tmp/hadolint.log 2>/dev/null || true)
+            echo "- Files: ${{ inputs.hadolint-dockerfiles }}"
+            echo "- Findings: ${findings:-0}"
 
   diff-coverage:
     name: Diff coverage (diff-cover)

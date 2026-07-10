@@ -5,6 +5,51 @@ one SemVer stream, exact-tag pins, MAJOR = anything that can turn a consumer's
 green CI red without the consumer editing anything. While on `0.x`, breaking
 changes may land in any release.
 
+## v0.6.0 — 2026-07-10
+
+MINOR: four new gates, all shipped **opt-in** per the new-gate rollout rule —
+existing consumers see skipped jobs until they set the `enable-*` inputs;
+promotion to default-on comes with the next MAJOR. One caveat below on the
+`tests` gate (allowed while on `0.x`).
+
+### Added
+
+- **`jslint` gate** (eslint): lints hand-written JS via a consumer-defined
+  `jslint` npm script — closes the asymmetry where Python gets ruff and CSS
+  gets stylelint but JS only gets tests. New input: `enable-jslint`
+  (**default `false`**). Consumer contract: npm script `jslint` +
+  `eslint.config.js` (reference in `example/`).
+- **`templates` gate** (djlint): lints the Jinja templates themselves —
+  unbalanced tags, malformed syntax — complementing `a11y`, which validates
+  the HTML but not the Jinja. Pure scan, no project deps; profile and rule
+  ignores come from `[tool.djlint]` in the consumer's pyproject. New inputs:
+  `djlint-spec` (`"djlint>=1.36,<2"`), `djlint-paths` (`"templates/"`), and
+  `enable-templates` (**default `false`**).
+- **`js-deps` gate** (npm audit): the JS half of "audit what ships" — audits
+  `package-lock.json` with `--omit=dev`, so dev tooling never fails the gate.
+  Skips quietly when the workdir has no lockfile. New inputs:
+  `npm-audit-level` (`"high"`) and `enable-js-deps` (**default `false`**).
+- **`dockerfile` gate** (hadolint): static Dockerfile lint, pinned binary
+  (same install pattern as gitleaks). New inputs: `hadolint-version`
+  (`"2.14.0"`), `hadolint-dockerfiles` (`"Dockerfile"`), and
+  `enable-dockerfile` (**default `false`**).
+- `Makefile.colormath`: mirror targets `jslint`, `templates`, `js-audit`,
+  `dockerfile` (out of `preflight` while their gates are opt-in) and
+  `lock-check` (in `preflight`), with `COLORMATH_DJLINT_SPEC` /
+  `COLORMATH_DJLINT_PATHS` / `COLORMATH_NPM_AUDIT_LEVEL` /
+  `COLORMATH_HADOLINT_DOCKERFILES` knobs.
+- `example/`: `eslint.config.js` + `jslint` npm script, `[tool.djlint]`
+  (jinja profile, H030/H031 ignored), and a hadolint-clean `Dockerfile`;
+  colormath's self-test enables all four new gates.
+
+### Changed
+
+- **`tests` gate now runs `poetry check --lock` first**, so pyproject/lock
+  drift fails up front with a legible message instead of deep inside a
+  `poetry install`. Strictly this can turn a drifted consumer red without a
+  consumer edit (MAJOR territory) — landed on `0.x` where breaking changes
+  are allowed; the fix is `poetry lock` in the consumer repo.
+
 ## v0.5.0 — 2026-07-09
 
 MINOR: new gate, shipped **opt-in** per the new-gate rollout rule — existing
