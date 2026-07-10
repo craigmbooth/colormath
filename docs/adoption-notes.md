@@ -16,7 +16,8 @@ construct `Settings` with `_env_file=None` and must not see it). The inline
 `deploy-staging` job became a sibling `needs: gates` job. The local gate
 mirrors come from a vendored `Makefile.colormath` (repo Makefile just
 `include`s it and defines `test`). No branch protection to update (private
-repo, free plan).
+repo, free plan). Docstrings gate enabled (#68): `[tool.interrogate]`
+fail-under 90, measured 93.1% at enablement.
 
 ## intendent — done (craigmbooth/intendent#71, @v0.5.0 as of #72)
 
@@ -39,6 +40,9 @@ repo, free plan).
   from the review caller (#73): every PR comment — including the review's own
   two bot comments — spawned a run that instantly skipped (ghost runs).
   Re-run reviews from the Actions UI or draft→ready instead of `@claude`.
+- Docstrings gate enabled (#74): `[tool.interrogate]` fail-under 92, measured
+  95.3% at enablement; `gates / Docstrings (interrogate)` added to the
+  Master ruleset's required checks.
 
 ## runwayz — done (PorticoFoundry/runwayz#283, @v0.5.0)
 
