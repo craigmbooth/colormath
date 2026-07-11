@@ -4,7 +4,7 @@ Working notes for migrating the maintainer's own products onto the gates
 channel. Adoption order is always talas (canary) → intendent → runwayz
 (see [LIFECYCLE.md](../LIFECYCLE.md)).
 
-## talas — done (talas-app/talas#63, @v0.5.0 as of #67; plugin enabled via .claude/settings.json, no review workflow yet)
+## talas — done (@v1.0.0 pending talas-app/talas#71)
 
 `default-branch: main`, `poetry-install-args: "--with webapp,worker"`,
 `ruff-spec` matching pyproject's `^0.14.8` pin. `scripts/diff-coverage.sh` and
@@ -19,7 +19,7 @@ mirrors come from a vendored `Makefile.colormath` (repo Makefile just
 repo, free plan). Docstrings gate enabled (#68): `[tool.interrogate]`
 fail-under 90, measured 93.1% at enablement.
 
-## intendent — done (craigmbooth/intendent#71, @v0.5.0 as of #72)
+## intendent — done (@v1.0.0 pending craigmbooth/intendent#76)
 
 - Vendor `Makefile.colormath`; set `COLORMATH_RUFF_CHECK_ARGS = --select I` and
   `COLORMATH_DIFF_COVER_BASE = origin/master` before the include
@@ -44,7 +44,7 @@ fail-under 90, measured 93.1% at enablement.
   95.3% at enablement; `gates / Docstrings (interrogate)` added to the
   Master ruleset's required checks.
 
-## runwayz — done (PorticoFoundry/runwayz#283, @v0.5.0)
+## runwayz — done (@v1.0.0 pending PorticoFoundry/runwayz#288)
 
 - Replaced the older `ci.yml` wholesale. Landed with `enable-styles: false`
   and `enable-a11y: false` (no stylelint/html-validate tooling yet) — burn
