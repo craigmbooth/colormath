@@ -7,13 +7,14 @@ name: Gates
 #
 #   jobs:
 #     gates:
-#       uses: ColorMath/ci/.github/workflows/gates.yml@v1.0.0
+#       uses: ColorMath/ci/.github/workflows/gates.yml@v1.1.0
 #       with:
 #         python-version: "3.12"
 #         default-branch: main
 #
-# Fourteen parallel gates: ruff, tests (JS + Python, plus a
+# Fifteen parallel gates: ruff, tests (JS + Python, plus a
 # poetry-lock-in-sync check), typecheck (mypy), docstrings (interrogate),
+# migrations (alembic sync vs the base branch; opt-in until the next MAJOR),
 # jslint (eslint), styles (stylelint), templates (djlint), sast (bandit),
 # secrets (gitleaks), a11y (html-validate), deps (pip-audit), js-deps
 # (npm audit), dockerfile (hadolint), diff-coverage (diff-cover). Register
@@ -68,7 +69,7 @@ on:
       colormath-ref:
         description: colormath ref to fetch gate scripts from (stamped per release; do not set as a consumer)
         type: string
-        default: "v1.0.0"
+        default: "v1.1.0"
       ruff-spec:
         description: pip requirement spec for ruff (match your pyproject dev pin)
         type: string
@@ -89,6 +90,10 @@ on:
         description: Space-separated paths for interrogate to scan; "." scans the whole workdir, scoped by [tool.interrogate] excludes
         type: string
         default: "."
+      migrations-path:
+        description: Migrations directory the migrations gate watches (relative to workdir)
+        type: string
+        default: "alembic/versions"
       gitleaks-version:
         description: gitleaks release to install
         type: string
@@ -133,6 +138,10 @@ on:
       enable-docstrings:
         type: boolean
         default: true
+      # Opt-in while new (LIFECYCLE new-gate rollout); default-on at the next MAJOR.
+      enable-migrations:
+        type: boolean
+        default: false
       enable-jslint:
         type: boolean
         default: true
@@ -397,6 +406,61 @@ jobs:
           stats: |
             result=$(grep -m1 -oE 'RESULT: [A-Z]+ \(minimum: [0-9.]+%, actual: [0-9.]+%\)' /tmp/interrogate.log 2>/dev/null || echo 'see log')
             echo "- ${result}"
+
+  migrations:
+    name: Migrations (alembic sync)
+    if: ${{ inputs.enable-migrations }}
+    runs-on: ubuntu-latest
+    # A PR that branched before newer migrations landed on the base branch
+    # merges into multiple alembic heads. This gate diffs the base branch
+    # against its merge-base with the PR head, scoped to migrations-path, and
+    # fails with "pull in the latest <branch>" if the base moved. The base
+    # branch is the default-branch input when set, else discovered from the
+    # repo (handles main vs master). On push events the merge-base is HEAD
+    # itself, so the gate passes trivially. Opt-in while new: set
+    # enable-migrations: true (default-on arrives with the next MAJOR).
+    defaults:
+      run:
+        working-directory: ${{ inputs.workdir }}
+    steps:
+      - name: Check out code (PR head, full history)
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0  # merge-base needs history
+          # The default pull_request checkout is the ephemeral merge commit,
+          # which already contains the base branch and would hide divergence.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Check out colormath (gate tooling)
+        uses: actions/checkout@v6
+        with:
+          repository: ColorMath/ci
+          ref: ${{ inputs.colormath-ref }}
+          path: .colormath-lib
+          sparse-checkout: |
+            scripts
+            .github
+
+      - name: Ensure base branch ref is available
+        run: git fetch --no-tags origin "$DEFAULT_BRANCH"
+
+      - name: Check migrations are in sync with the base branch
+        env:
+          MIGRATIONS_BASE: origin/${{ env.DEFAULT_BRANCH }}
+          MIGRATIONS_PATH: ${{ inputs.migrations-path }}
+        run: |
+          "$GITHUB_WORKSPACE/.colormath-lib/scripts/migrations-sync.sh" 2>&1 | tee /tmp/migrations.log
+
+      - name: Gate summary
+        if: always()
+        uses: ./.colormath-lib/.github/actions/gate-summary
+        with:
+          title: "🗄️ Migrations (alembic sync)"
+          status: ${{ job.status }}
+          log-files: /tmp/migrations.log
+          stats: |
+            verdict=$(grep -m1 -E '^(✓|✖)' /tmp/migrations.log 2>/dev/null || echo 'see log')
+            echo "- ${verdict}"
 
   jslint:
     name: JS Lint (eslint)
