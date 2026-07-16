@@ -5,6 +5,32 @@ one SemVer stream, exact-tag pins, MAJOR = anything that can turn a consumer's
 green CI red without the consumer editing anything. While on `0.x`, breaking
 changes may land in any release.
 
+## v1.1.0 — 2026-07-10
+
+MINOR: new gate, shipped **opt-in** per the new-gate rollout rule — existing
+consumers see a skipped `migrations` job until they set
+`enable-migrations: true`; promotion to default-on comes with the next MAJOR.
+
+### Added
+
+- **`migrations` gate** (`scripts/migrations-sync.sh`, pure git — no project
+  deps): fails when the base branch has alembic migration changes the PR
+  branch predates, before they merge into multiple alembic heads. Diffs the
+  base branch against its merge-base with the PR head (checked out at the
+  real head SHA — the ephemeral merge commit would hide divergence), scoped
+  to the migrations directory, and tells the author to
+  `git pull --rebase origin <branch>`. The base branch is the
+  `default-branch` input when set, else the repo's default branch (main and
+  master both work); local runs discover it from `origin/HEAD`. New inputs:
+  `migrations-path` (`"alembic/versions"`) and `enable-migrations`
+  (**default `false`**).
+- `Makefile.colormath`: `migrations` target (fetch-then-run of the shared
+  script) with a `COLORMATH_MIGRATIONS_PATH` knob. Not in `preflight` while
+  the CI gate is opt-in.
+- `example/`: reference `alembic/versions/` directory (excluded from
+  interrogate + coverage, mirroring real consumers); the self-test runs with
+  `enable-migrations: true`.
+
 ## v1.0.0 — 2026-07-10
 
 **MAJOR — pins are now contractual.** Two breaking changes: every gate now

@@ -19,7 +19,7 @@
 #     `jslint`/`styles`/`a11y`, optional .gitleaks.toml
 # ----------------------------------------------------------------------------
 
-COLORMATH_REF = v1.0.0
+COLORMATH_REF = v1.1.0
 COLORMATH_RAW = https://raw.githubusercontent.com/ColorMath/ci/$(COLORMATH_REF)
 
 # Overridable knobs — set before the include if your project differs.
@@ -30,14 +30,17 @@ COLORMATH_DJLINT_SPEC ?= djlint>=1.36,<2
 COLORMATH_DJLINT_PATHS ?= templates/  # space-separated; profile/ignores from [tool.djlint]
 COLORMATH_HADOLINT_DOCKERFILES ?= Dockerfile  # space-separated
 COLORMATH_NPM_AUDIT_LEVEL ?= high     # npm audit failure threshold (prod deps only)
+# Migrations directory watched by `make migrations` (no inline comment here:
+# the value is a git pathspec, so trailing whitespace would break it).
+COLORMATH_MIGRATIONS_PATH ?= alembic/versions
 COLORMATH_RUFF_CHECK_ARGS ?=      # e.g. "--select I" for imports-only lint
 COLORMATH_PREFLIGHT_SKIP ?=       # gate targets preflight omits — mirror your enable-*: false flags
 COLORMATH_DIFF_COVER_BASE ?=      # e.g. origin/master; empty = script default
 COLORMATH_DIFF_COVER_FAIL_UNDER ?=  # e.g. 80; empty = script default (90)
 
-.PHONY: format-check lint lock-check typecheck docstrings jslint styles \
-	templates sast secrets a11y audit js-audit dockerfile coverage-diff \
-	preflight colormath-update
+.PHONY: format-check lint lock-check typecheck docstrings migrations jslint \
+	styles templates sast secrets a11y audit js-audit dockerfile \
+	coverage-diff preflight colormath-update
 
 format-check: ## Gate: ruff formatting is clean
 	poetry run ruff format --check .
@@ -95,6 +98,17 @@ audit: ## Gate: pip-audit CVE scan of shipped deps (.colormath/audit.conf)
 	curl -fsSL --retry 3 $(COLORMATH_RAW)/scripts/audit-deps.sh -o $$tmp || { \
 		echo "colormath: could not fetch scripts/audit-deps.sh@$(COLORMATH_REF) — this gate needs network access" >&2; \
 		rm -f $$tmp; exit 1; }; \
+	bash $$tmp; rc=$$?; rm -f $$tmp; exit $$rc
+
+# Not in preflight while the CI gate is opt-in (enable-migrations defaults to
+# false until the next MAJOR). Discovers the default branch (main vs master)
+# from origin/HEAD; run `git fetch origin` first for an accurate answer.
+migrations: ## Gate: migrations dir in sync with the default branch (pull if not)
+	@tmp=$$(mktemp); \
+	curl -fsSL --retry 3 $(COLORMATH_RAW)/scripts/migrations-sync.sh -o $$tmp || { \
+		echo "colormath: could not fetch scripts/migrations-sync.sh@$(COLORMATH_REF) — this gate needs network access" >&2; \
+		rm -f $$tmp; exit 1; }; \
+	MIGRATIONS_PATH='$(COLORMATH_MIGRATIONS_PATH)' \
 	bash $$tmp; rc=$$?; rm -f $$tmp; exit $$rc
 
 coverage-diff: ## Gate: changed lines vs the base branch are covered
