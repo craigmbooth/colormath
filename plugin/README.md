@@ -50,6 +50,46 @@ merging is always a human decision.
   consumer repos can mirror that list in `.claude/settings.json` permissions
   to avoid prompts (see intendent for a worked example).
 
+## `/colormath:qa` — QA a feature, then ship the fixes
+
+Takes a focus area (`/colormath:qa the invite flow`) and QAs it against the
+**running** stack, on the principle that a finding is a claim about a running
+system and only counts once you've reproduced it:
+
+1. **Scope** — maps the area to the routes, services, jobs and templates that
+   implement it, and notes the trust boundaries it crosses.
+2. **Recon** — brings the stack up (checking first whether it's already
+   running, so it doesn't reseed someone's working environment) and collects
+   credentials at *several* privilege tiers, including cross-tenant and any
+   no-access role. A single admin account can't surface an authorization bug.
+3. **Probe** — works three catalogs in `references/`: security (authorization
+   matrix, confused-deputy, stored content served back, input validation),
+   correctness (cross-surface consistency, write round-trips, contract drift),
+   accessibility (keyboard, semantics, announcements, contrast). Sweeps before
+   fixing anything.
+4. **Verify** — reproduces every finding and reports the mechanism actually
+   observed, not the assumed one. Separates pre-existing failures from real
+   ones before attributing anything.
+5. **Report and choose** — ranked findings with blast radius and repro, plus
+   what came back clean and what wasn't covered; you pick what to fix.
+6. **Fix, restore, ship** — re-runs each original repro against the running
+   system (a green unit test isn't proof the bug is gone), undoes its test
+   data and config changes, then hands off to `/colormath:ship`.
+
+Local state is fair game — it writes rows, uploads files, mints credentials —
+but it stops and asks before anything leaves the machine, because a dev `.env`
+often holds a live provider key.
+
+**Prerequisites:**
+
+- A locally runnable stack, with the run commands and ports documented in
+  `AGENTS.md` / `CLAUDE.md` (the skill reads these first).
+- Seeded demo data with known accounts, ideally at several privilege tiers.
+- `make preflight` and the `gates / *` check names — step 4 uses them to tell
+  a genuine finding from local tool-version drift, and defers to CI when the
+  two disagree.
+- `/colormath:ship` for the handoff in step 6.
+
 ## Adding a skill
 
 One directory per skill: `skills/<name>/SKILL.md` with frontmatter

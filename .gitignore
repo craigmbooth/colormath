@@ -14,3 +14,7 @@ node_modules/
 # The gates workflow checks colormath out here inside consumer repos; make
 # sure a local experiment never commits it.
 .colormath-lib/
+
+# skill-creator eval scratch (contains product-specific fixtures)
+plugin/skills/*/evals/
+plugin/skills/qa-workspace/

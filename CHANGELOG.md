@@ -5,6 +5,30 @@ one SemVer stream, exact-tag pins, MAJOR = anything that can turn a consumer's
 green CI red without the consumer editing anything. While on `0.x`, breaking
 changes may land in any release.
 
+## Unreleased
+
+MINOR: new plugin skill. No gate, workflow, terraform or Makefile surface
+changes, so a consumer's CI cannot change colour from this release.
+
+### Added
+
+- **`/colormath:qa` plugin skill** (`plugin/skills/qa/`): QAs a focus area
+  against the running stack, then hands the fixes to `/colormath:ship`.
+  Recon (bring the stack up without disturbing existing state; collect
+  credentials at several privilege tiers) → probe → verify → ranked findings
+  the user selects from → fix → restore → ship. Three probe catalogs live in
+  `references/`: `security.md` (authorization matrix, confused-deputy,
+  stored content served back, input validation, disclosure), `correctness.md`
+  (cross-surface consistency, write round-trips, boundaries, contract drift),
+  `accessibility.md` (keyboard, semantics, dynamic state, contrast).
+
+  Contract surfaces it depends on — a rename of any must ship with a matching
+  skill update: the `ship` skill (step 7 handoff), `make preflight` and the
+  `gates / *` check names (step 4, telling a real finding from local
+  tool-version drift), and the `a11y` gate as the documented floor that the
+  accessibility catalog deliberately goes beyond. It also assumes the
+  consumer documents run commands and ports in `AGENTS.md` / `CLAUDE.md`.
+
 ## v1.1.0 — 2026-07-10
 
 MINOR: new gate, shipped **opt-in** per the new-gate rollout rule — existing
