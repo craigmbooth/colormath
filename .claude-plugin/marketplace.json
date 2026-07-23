@@ -8,7 +8,7 @@
     {
       "name": "colormath",
       "source": "./plugin",
-      "description": "Skills for the colormath gates + review pipeline: /colormath:ship takes a branch through PR, gates, review, and triage to a merge recommendation."
+      "description": "Skills for the colormath gates + review pipeline: /colormath:ship takes a branch through PR, gates, review, and triage to a merge recommendation; /colormath:qa QAs a focus area against the running stack then hands the fixes to ship."
     }
   ]
 }
