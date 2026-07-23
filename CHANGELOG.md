@@ -61,6 +61,11 @@ rule pointed at.
 - `Makefile.colormath`: `migrations` and `import-linter` join `preflight`, so
   the local mirror matches the default-on CI suite. Keep
   `COLORMATH_PREFLIGHT_SKIP` in lockstep with your caller's `enable-*: false`.
+- **Plugin metadata aligned to the release.** `plugin/.claude-plugin/plugin.json`
+  bumps `1.0.0` → `2.0.0` (it was last set at the v1.0.0 release and missed the
+  `qa`-skill bump), and the marketplace blurb now names `/colormath:qa`. The
+  plugin marketplace tracks the default branch, so this ships to installs on the
+  next auto-update — no consumer action.
 
 ### Upgrade notes
 
