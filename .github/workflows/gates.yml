@@ -12,12 +12,13 @@ name: Gates
 #         python-version: "3.12"
 #         default-branch: main
 #
-# Fifteen parallel gates: ruff, tests (JS + Python, plus a
+# Sixteen parallel gates: ruff, tests (JS + Python, plus a
 # poetry-lock-in-sync check), typecheck (mypy), docstrings (interrogate),
-# migrations (alembic sync vs the base branch; opt-in until the next MAJOR),
-# jslint (eslint), styles (stylelint), templates (djlint), sast (bandit),
-# secrets (gitleaks), a11y (html-validate), deps (pip-audit), js-deps
-# (npm audit), dockerfile (hadolint), diff-coverage (diff-cover). Register
+# migrations (alembic sync vs the base branch), import-linter (import
+# architecture via lint-imports), jslint (eslint), styles (stylelint),
+# templates (djlint), sast (bandit), secrets (gitleaks), a11y
+# (html-validate), deps (pip-audit), js-deps (npm audit), dockerfile
+# (hadolint), diff-coverage (diff-cover). Register
 # each gate's job name as a required status check in the consumer's branch
 # ruleset. Every gate defaults on; adopt incrementally via enable-* inputs.
 #
@@ -69,7 +70,7 @@ on:
       colormath-ref:
         description: colormath ref to fetch gate scripts from (stamped per release; do not set as a consumer)
         type: string
-        default: "v1.1.0"
+        default: "v2.0.0"
       ruff-spec:
         description: pip requirement spec for ruff (match your pyproject dev pin)
         type: string
@@ -102,6 +103,10 @@ on:
         description: pip requirement spec for djlint (match your pyproject dev pin)
         type: string
         default: "djlint>=1.36,<2"
+      import-linter-spec:
+        description: pip requirement spec for import-linter (match your pyproject dev pin)
+        type: string
+        default: "import-linter>=2,<3"
       djlint-paths:
         description: Space-separated template paths for djlint to lint; profile/ignores come from [tool.djlint]
         type: string
@@ -138,10 +143,10 @@ on:
       enable-docstrings:
         type: boolean
         default: true
-      # Opt-in while new (LIFECYCLE new-gate rollout); default-on at the next MAJOR.
+      # Default-on since v2.0.0 (was opt-in in v1.1.0 per the new-gate rollout).
       enable-migrations:
         type: boolean
-        default: false
+        default: true
       enable-jslint:
         type: boolean
         default: true
@@ -170,6 +175,10 @@ on:
         type: boolean
         default: true
       enable-diff-coverage:
+        type: boolean
+        default: true
+      # Default-on since v2.0.0 (added opt-in and promoted in the same MAJOR).
+      enable-import-linter:
         type: boolean
         default: true
 
@@ -367,7 +376,6 @@ jobs:
     # interrogate is a pure AST scanner — no project deps needed. Coverage
     # threshold and scope come from [tool.interrogate] in the consumer's
     # pyproject.
-    # arrives with the next MAJOR).
     defaults:
       run:
         working-directory: ${{ inputs.workdir }}
@@ -407,6 +415,55 @@ jobs:
             result=$(grep -m1 -oE 'RESULT: [A-Z]+ \(minimum: [0-9.]+%, actual: [0-9.]+%\)' /tmp/interrogate.log 2>/dev/null || echo 'see log')
             echo "- ${result}"
 
+  import-linter:
+    name: Import boundaries (import-linter)
+    if: ${{ inputs.enable-import-linter }}
+    runs-on: ubuntu-latest
+    # import-linter (via grimp) builds the import graph by static analysis — no
+    # project deps needed, same as interrogate. The architecture it enforces —
+    # layers / forbidden / independence contracts — is entirely project-specific,
+    # so it comes from [tool.importlinter] in the consumer's pyproject (or a
+    # .importlinter file); lint-imports auto-discovers it. Default-on since
+    # v2.0.0; a consumer with no contracts sets enable-import-linter: false.
+    defaults:
+      run:
+        working-directory: ${{ inputs.workdir }}
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v6
+
+      - name: Check out colormath (gate tooling)
+        uses: actions/checkout@v6
+        with:
+          repository: ColorMath/ci
+          ref: ${{ inputs.colormath-ref }}
+          path: .colormath-lib
+          sparse-checkout: |
+            scripts
+            .github
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: Install import-linter
+        run: pip install '${{ inputs.import-linter-spec }}'
+
+      - name: Check import contracts
+        run: lint-imports 2>&1 | tee /tmp/import-linter.log
+
+      - name: Gate summary
+        if: always()
+        uses: ./.colormath-lib/.github/actions/gate-summary
+        with:
+          title: "🧭 Import boundaries (import-linter)"
+          status: ${{ job.status }}
+          log-files: /tmp/import-linter.log
+          stats: |
+            result=$(grep -m1 -oE 'Contracts: [0-9]+ kept, [0-9]+ broken\.' /tmp/import-linter.log 2>/dev/null || echo 'see log')
+            echo "- ${result}"
+
   migrations:
     name: Migrations (alembic sync)
     if: ${{ inputs.enable-migrations }}
@@ -417,8 +474,8 @@ jobs:
     # fails with "pull in the latest <branch>" if the base moved. The base
     # branch is the default-branch input when set, else discovered from the
     # repo (handles main vs master). On push events the merge-base is HEAD
-    # itself, so the gate passes trivially. Opt-in while new: set
-    # enable-migrations: true (default-on arrives with the next MAJOR).
+    # itself, so the gate passes trivially. Default-on since v2.0.0; set
+    # enable-migrations: false in a consumer without alembic.
     defaults:
       run:
         working-directory: ${{ inputs.workdir }}

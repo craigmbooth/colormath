@@ -27,5 +27,5 @@ jobs:
       python-version: "3.12"
       default-branch: main
       colormath-ref: ${{ github.sha }}
-      # Opt-in gates, but the self-test exercises everything.
-      enable-migrations: true
+      # Every gate is default-on as of v2.0.0; the self-test takes the defaults
+      # and exercises the whole suite against example/.

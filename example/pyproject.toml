@@ -44,3 +44,17 @@ omit = ["tests/*", "alembic/*"]
 [build-system]
 requires = ["poetry-core>=2.0"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.importlinter]
+# Import boundaries for the import-linter gate. Contracts are declared here and
+# enforced by `lint-imports` (see gates.yml / `make import-linter`). This is a
+# minimal demo: the service layer is the domain core and must not reach "up"
+# into the web/delivery layer. Real consumers add layers/forbidden/independence
+# contracts describing their own architecture.
+root_package = "example_pkg"
+
+[[tool.importlinter.contracts]]
+name = "service layer must not import the web layer"
+type = "forbidden"
+source_modules = ["example_pkg.service"]
+forbidden_modules = ["example_pkg.web"]

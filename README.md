@@ -2,13 +2,13 @@
 
 [![CI](https://github.com/ColorMath/ci/actions/workflows/ci.yml/badge.svg)](https://github.com/ColorMath/ci/actions/workflows/ci.yml)
 
-**Fifteen CI quality gates for Python web apps, in one `uses:` line.**
+**Sixteen CI quality gates for Python web apps, in one `uses:` line.**
 
 colormath is a reusable GitHub Actions workflow (plus the scripts and composite
 actions behind it) that gives a Poetry-managed Python project a complete,
 parallel CI gate suite: formatting, lint (Python and JS), types, docstrings,
-alembic migration sync, tests, template lint, security, secrets,
-accessibility, dependency CVEs (Python and JS), Dockerfile lint, and
+alembic migration sync, import boundaries, tests, template lint, security,
+secrets, accessibility, dependency CVEs (Python and JS), Dockerfile lint, and
 per-change test coverage.
 
 It grew out of a family of FastAPI + Poetry + Jinja/Tailwind apps deployed on
@@ -35,15 +35,14 @@ concurrency:
 
 jobs:
   gates:
-    uses: ColorMath/ci/.github/workflows/gates.yml@v1.1.0
+    uses: ColorMath/ci/.github/workflows/gates.yml@v2.0.0
     with:
       python-version: "3.12"
       default-branch: main
 ```
 
-Open a pull request and you'll get fourteen parallel checks (fifteen with the
-opt-in `migrations` gate), each posting a compact stats block to the run
-summary. Project-specific jobs (deploys,
+Open a pull request and you'll get sixteen parallel checks, each posting a
+compact stats block to the run summary. Project-specific jobs (deploys,
 previews, seeding) stay in your repo as siblings that gate on the suite:
 
 ```yaml
@@ -65,7 +64,8 @@ suite against it on every PR.
 | `tests` | vitest + pytest | `poetry.lock` in sync with pyproject, then JS and Python suites green |
 | `typecheck` | [mypy](https://mypy-lang.org/) | type checks pass |
 | `docstrings` | [interrogate](https://interrogate.readthedocs.io/) | docstring coverage ≥ your `[tool.interrogate]` fail-under |
-| `migrations` | git (no deps) | branch not missing alembic migrations that landed on the base branch — **opt-in** until the next MAJOR |
+| `migrations` | git (no deps) | branch not missing alembic migrations that landed on the base branch (set `enable-migrations: false` without alembic) |
+| `import-linter` | [import-linter](https://import-linter.readthedocs.io/) | your `[tool.importlinter]` import contracts hold (layers / forbidden / independence); set `enable-import-linter: false` until you write contracts |
 | `jslint` | [eslint](https://eslint.org/) | hand-written JS passes lint |
 | `styles` | [stylelint](https://stylelint.io/) | design tokens only — no hardcoded colors/font-sizes |
 | `templates` | [djlint](https://djlint.com/) | Jinja templates are well-formed (per `[tool.djlint]`) |
@@ -94,6 +94,14 @@ Two design choices worth calling out:
   `<branch>`" when the base moved. The base branch is your `default-branch`
   input when set, else discovered from the repo — main and master both just
   work.
+- **`import-linter` enforces the architecture you write down.** The gate runs
+  `lint-imports` against the contracts in your `[tool.importlinter]` — a
+  layered dependency order, a module that must stay independent of another, a
+  boundary a subsystem may not cross. Like the rest of the suite it needs no
+  project deps (grimp builds the import graph by static analysis), and the
+  rules are entirely yours: colormath ships the runner, your pyproject ships
+  the contracts. Handy for invariants a reviewer can't reliably catch by eye —
+  e.g. a worker entrypoint that must never import a FastAPI-coupled module.
 
 ## Adopting incrementally
 
@@ -102,7 +110,7 @@ existing findings, land the caller with the failing gates disabled, burn the
 findings down, and enable them one by one:
 
 ```yaml
-    uses: ColorMath/ci/.github/workflows/gates.yml@v1.1.0
+    uses: ColorMath/ci/.github/workflows/gates.yml@v2.0.0
     with:
       python-version: "3.12"
       default-branch: main
@@ -134,12 +142,13 @@ All inputs are optional.
 | `gitleaks-version` | `"8.30.1"` | gitleaks release to install |
 | `djlint-spec` | `"djlint>=1.36,<2"` | pip spec for djlint — match your pyproject pin |
 | `djlint-paths` | `"templates/"` | space-separated template paths for djlint; profile/ignores from `[tool.djlint]` |
+| `import-linter-spec` | `"import-linter>=2,<3"` | pip spec for import-linter — match your pyproject pin |
 | `hadolint-version` | `"2.14.0"` | hadolint release to install |
 | `hadolint-dockerfiles` | `"Dockerfile"` | space-separated Dockerfile paths to lint |
 | `npm-audit-level` | `"high"` | severity at which npm audit fails the `js-deps` gate |
 | `diff-cover-fail-under` | `"90"` | Minimum % coverage on changed lines |
 | `free-disk-space` | `false` | Reclaim runner disk first (heavy ML dependency trees) |
-| `enable-<gate>` | `true` (`enable-migrations`: `false`) | Per-gate opt-out (see above); new gates ship opt-in |
+| `enable-<gate>` | `true` | Per-gate opt-out (see above); new gates ship opt-in in a MINOR, then default-on in the next MAJOR |
 
 ### Files in your repo
 
@@ -148,6 +157,7 @@ All inputs are optional.
 | `pyproject.toml` with `[tool.bandit]` | `sast` | scan scope/excludes (plus your mypy/ruff config as usual) |
 | `pyproject.toml` with `[tool.interrogate]` | `docstrings` | coverage threshold (`fail-under`) + excludes |
 | `pyproject.toml` with `[tool.djlint]` | `templates` | djlint profile (e.g. `jinja`) + rule ignores |
+| `pyproject.toml` with `[tool.importlinter]` | `import-linter` | your import contracts (root package(s) + layers/forbidden/independence) ([reference](example/pyproject.toml)) |
 | `.colormath/audit.conf` | `deps` | poetry groups that ship + CVE allowlist ([reference](example/.colormath/audit.conf)) |
 | npm scripts `test`, `jslint`, `styles`, `a11y` | the JS gates | see [example/package.json](example/package.json) |
 | `eslint.config.js` + vendored `eslint.config.colormath.mjs` | `jslint` | thin caller of the shared eslint base ([reference](example/eslint.config.js)); devDeps `eslint`, `@eslint/js`, `globals` |
@@ -208,7 +218,7 @@ on:
 
 jobs:
   review:
-    uses: ColorMath/ci/.github/workflows/review.yml@v1.1.0
+    uses: ColorMath/ci/.github/workflows/review.yml@v2.0.0
     permissions:
       contents: read
       pull-requests: write
@@ -274,8 +284,8 @@ base — your `eslint.config.js` stays a thin caller; see its header for the
 factory options and escape hatches). Vendor them once:
 
 ```sh
-curl -fsSLO https://raw.githubusercontent.com/ColorMath/ci/v1.1.0/Makefile.colormath
-curl -fsSLO https://raw.githubusercontent.com/ColorMath/ci/v1.1.0/eslint.config.colormath.mjs
+curl -fsSLO https://raw.githubusercontent.com/ColorMath/ci/v2.0.0/Makefile.colormath
+curl -fsSLO https://raw.githubusercontent.com/ColorMath/ci/v2.0.0/eslint.config.colormath.mjs
 ```
 
 then include the Makefile from yours, providing the one target it expects
@@ -302,7 +312,7 @@ pin, and review the diff like any other dependency bump.
 
 ## Versioning and upgrades
 
-One SemVer tag stream, and consumers pin **exact tags only** (`@v1.1.0`, never
+One SemVer tag stream, and consumers pin **exact tags only** (`@v2.0.0`, never
 a floating major tag): an upgrade should arrive as a reviewable PR whose diff
 and changelog explain themselves — not as a surprise inside an unrelated one.
 

@@ -5,13 +5,36 @@ one SemVer stream, exact-tag pins, MAJOR = anything that can turn a consumer's
 green CI red without the consumer editing anything. While on `0.x`, breaking
 changes may land in any release.
 
-## Unreleased
+## v2.0.0 — 2026-07-23
 
-MINOR: new plugin skill. No gate, workflow, terraform or Makefile surface
-changes, so a consumer's CI cannot change colour from this release.
+**MAJOR — two formerly opt-in gates flip default-on.** `migrations` (shipped
+opt-in in v1.1.0) and `import-linter` (added and promoted in this same
+release) now default `enable-*: true`. A consumer that never set these flags
+gets both gates on its next bump: `migrations` just works wherever
+`migrations-path` (`alembic/versions`) exists; `import-linter` fails until the
+repo has `[tool.importlinter]` contracts, so disable it and burn down on your
+schedule. This is the promotion the v1.1.0 changelog and the new-gate rollout
+rule pointed at.
 
 ### Added
 
+- **`import-linter` gate** (import-linter): enforces the project's import
+  architecture — layered dependency order, forbidden edges, module
+  independence — via `lint-imports`. Pure static analysis (grimp builds the
+  import graph without executing code), so no project deps are installed,
+  mirroring `docstrings`/`templates`. The contracts are entirely
+  project-specific and come from `[tool.importlinter]` in the consumer's
+  pyproject (or a `.importlinter` file), which `lint-imports` auto-discovers.
+  New inputs: `import-linter-spec` (`"import-linter>=2,<3"`) and
+  `enable-import-linter` (**default `true`**). Flat-layout note: `root_packages`
+  takes packages (dirs with `__init__.py`), so to forbid a top-level single-file
+  module (e.g. a `shared.py`) set `include_external_packages = True` and name it
+  in `forbidden_modules`.
+- `Makefile.colormath`: `import-linter` target with a
+  `COLORMATH_IMPORT_LINTER_SPEC` knob, now part of `preflight`.
+- `example/`: an `example_pkg` (service + web layers) with a `[tool.importlinter]`
+  `forbidden` contract (service must not import web) and a covering test;
+  colormath's self-test runs the gate default-on.
 - **`/colormath:qa` plugin skill** (`plugin/skills/qa/`): QAs a focus area
   against the running stack, then hands the fixes to `/colormath:ship`.
   Recon (bring the stack up without disturbing existing state; collect
@@ -28,6 +51,34 @@ changes, so a consumer's CI cannot change colour from this release.
   tool-version drift), and the `a11y` gate as the documented floor that the
   accessibility catalog deliberately goes beyond. It also assumes the
   consumer documents run commands and ports in `AGENTS.md` / `CLAUDE.md`.
+
+### Changed
+
+- **`enable-migrations` and `enable-import-linter` now default `true`.** These
+  were the last two opt-in gates; every gate is now default-on. Disable any
+  that are red for your repo (`enable-<gate>: false`) and burn down on your
+  own schedule.
+- `Makefile.colormath`: `migrations` and `import-linter` join `preflight`, so
+  the local mirror matches the default-on CI suite. Keep
+  `COLORMATH_PREFLIGHT_SKIP` in lockstep with your caller's `enable-*: false`.
+
+### Upgrade notes
+
+Paste into Claude Code in each consumer repo:
+
+> Bump colormath to v2.0.0: update the `gates.yml` `uses:` pin (and
+> `review.yml`/`review.yaml` if present) to `@v2.0.0` and run
+> `make colormath-update REF=v2.0.0` (refreshes Makefile.colormath AND
+> eslint.config.colormath.mjs). Two gates flip default-on at v2.0.0:
+> `migrations` and `import-linter`. If this repo uses alembic (has
+> `alembic/versions`), leave `migrations` on — it needs no config; otherwise
+> add `enable-migrations: false`. Unless this repo already has a
+> `[tool.importlinter]` contract, add `enable-import-linter: false` and file
+> yourself an issue to write import contracts later. Mirror every newly
+> disabled gate in `COLORMATH_PREFLIGHT_SKIP` in the root Makefile (before the
+> include) so `make preflight` matches CI. Verify locally: `make preflight`
+> (or the individual `make migrations` / `make import-linter` targets),
+> `poetry check --lock`, then open the bump PR.
 
 ## v1.1.0 — 2026-07-10
 
