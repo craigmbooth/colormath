@@ -28,6 +28,7 @@ COLORMATH_INTERROGATE_SPEC ?= interrogate>=1.7,<2
 COLORMATH_INTERROGATE_PATHS ?= .      # space-separated; scoped by [tool.interrogate] excludes
 COLORMATH_DJLINT_SPEC ?= djlint>=1.36,<2
 COLORMATH_DJLINT_PATHS ?= templates/  # space-separated; profile/ignores from [tool.djlint]
+COLORMATH_IMPORT_LINTER_SPEC ?= import-linter>=2,<3  # contracts from [tool.importlinter]
 COLORMATH_HADOLINT_DOCKERFILES ?= Dockerfile  # space-separated
 COLORMATH_NPM_AUDIT_LEVEL ?= high     # npm audit failure threshold (prod deps only)
 # Migrations directory watched by `make migrations` (no inline comment here:
@@ -39,7 +40,7 @@ COLORMATH_DIFF_COVER_BASE ?=      # e.g. origin/master; empty = script default
 COLORMATH_DIFF_COVER_FAIL_UNDER ?=  # e.g. 80; empty = script default (90)
 
 .PHONY: format-check lint lock-check typecheck docstrings migrations jslint \
-	styles templates sast secrets a11y audit js-audit dockerfile \
+	styles templates import-linter sast secrets a11y audit js-audit dockerfile \
 	coverage-diff preflight colormath-update
 
 format-check: ## Gate: ruff formatting is clean
@@ -64,6 +65,9 @@ jslint: ## Gate: eslint via the jslint npm script
 
 templates: ## Gate: djlint template lint ([tool.djlint] in pyproject)
 	poetry run pip install '$(COLORMATH_DJLINT_SPEC)' >/dev/null && poetry run djlint $(COLORMATH_DJLINT_PATHS) --lint
+
+import-linter: ## Gate: import-linter import contracts ([tool.importlinter] in pyproject)
+	poetry run pip install '$(COLORMATH_IMPORT_LINTER_SPEC)' >/dev/null && poetry run lint-imports
 
 js-audit: ## Gate: npm audit CVE scan of shipped JS deps
 	npm audit --omit=dev --audit-level=$(COLORMATH_NPM_AUDIT_LEVEL)

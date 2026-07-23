@@ -29,3 +29,4 @@ jobs:
       colormath-ref: ${{ github.sha }}
       # Opt-in gates, but the self-test exercises everything.
       enable-migrations: true
+      enable-import-linter: true

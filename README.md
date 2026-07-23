@@ -2,13 +2,13 @@
 
 [![CI](https://github.com/ColorMath/ci/actions/workflows/ci.yml/badge.svg)](https://github.com/ColorMath/ci/actions/workflows/ci.yml)
 
-**Fifteen CI quality gates for Python web apps, in one `uses:` line.**
+**Sixteen CI quality gates for Python web apps, in one `uses:` line.**
 
 colormath is a reusable GitHub Actions workflow (plus the scripts and composite
 actions behind it) that gives a Poetry-managed Python project a complete,
 parallel CI gate suite: formatting, lint (Python and JS), types, docstrings,
-alembic migration sync, tests, template lint, security, secrets,
-accessibility, dependency CVEs (Python and JS), Dockerfile lint, and
+alembic migration sync, import boundaries, tests, template lint, security,
+secrets, accessibility, dependency CVEs (Python and JS), Dockerfile lint, and
 per-change test coverage.
 
 It grew out of a family of FastAPI + Poetry + Jinja/Tailwind apps deployed on
@@ -41,9 +41,9 @@ jobs:
       default-branch: main
 ```
 
-Open a pull request and you'll get fourteen parallel checks (fifteen with the
-opt-in `migrations` gate), each posting a compact stats block to the run
-summary. Project-specific jobs (deploys,
+Open a pull request and you'll get fourteen parallel checks (sixteen with the
+opt-in `migrations` and `import-linter` gates), each posting a compact stats
+block to the run summary. Project-specific jobs (deploys,
 previews, seeding) stay in your repo as siblings that gate on the suite:
 
 ```yaml
@@ -66,6 +66,7 @@ suite against it on every PR.
 | `typecheck` | [mypy](https://mypy-lang.org/) | type checks pass |
 | `docstrings` | [interrogate](https://interrogate.readthedocs.io/) | docstring coverage ≥ your `[tool.interrogate]` fail-under |
 | `migrations` | git (no deps) | branch not missing alembic migrations that landed on the base branch — **opt-in** until the next MAJOR |
+| `import-linter` | [import-linter](https://import-linter.readthedocs.io/) | your `[tool.importlinter]` import contracts hold (layers / forbidden / independence) — **opt-in** until the next MAJOR |
 | `jslint` | [eslint](https://eslint.org/) | hand-written JS passes lint |
 | `styles` | [stylelint](https://stylelint.io/) | design tokens only — no hardcoded colors/font-sizes |
 | `templates` | [djlint](https://djlint.com/) | Jinja templates are well-formed (per `[tool.djlint]`) |
@@ -94,6 +95,14 @@ Two design choices worth calling out:
   `<branch>`" when the base moved. The base branch is your `default-branch`
   input when set, else discovered from the repo — main and master both just
   work.
+- **`import-linter` enforces the architecture you write down.** The gate runs
+  `lint-imports` against the contracts in your `[tool.importlinter]` — a
+  layered dependency order, a module that must stay independent of another, a
+  boundary a subsystem may not cross. Like the rest of the suite it needs no
+  project deps (grimp builds the import graph by static analysis), and the
+  rules are entirely yours: colormath ships the runner, your pyproject ships
+  the contracts. Handy for invariants a reviewer can't reliably catch by eye —
+  e.g. a worker entrypoint that must never import a FastAPI-coupled module.
 
 ## Adopting incrementally
 
@@ -134,6 +143,7 @@ All inputs are optional.
 | `gitleaks-version` | `"8.30.1"` | gitleaks release to install |
 | `djlint-spec` | `"djlint>=1.36,<2"` | pip spec for djlint — match your pyproject pin |
 | `djlint-paths` | `"templates/"` | space-separated template paths for djlint; profile/ignores from `[tool.djlint]` |
+| `import-linter-spec` | `"import-linter>=2,<3"` | pip spec for import-linter — match your pyproject pin |
 | `hadolint-version` | `"2.14.0"` | hadolint release to install |
 | `hadolint-dockerfiles` | `"Dockerfile"` | space-separated Dockerfile paths to lint |
 | `npm-audit-level` | `"high"` | severity at which npm audit fails the `js-deps` gate |
@@ -148,6 +158,7 @@ All inputs are optional.
 | `pyproject.toml` with `[tool.bandit]` | `sast` | scan scope/excludes (plus your mypy/ruff config as usual) |
 | `pyproject.toml` with `[tool.interrogate]` | `docstrings` | coverage threshold (`fail-under`) + excludes |
 | `pyproject.toml` with `[tool.djlint]` | `templates` | djlint profile (e.g. `jinja`) + rule ignores |
+| `pyproject.toml` with `[tool.importlinter]` | `import-linter` | your import contracts (root package(s) + layers/forbidden/independence) ([reference](example/pyproject.toml)) |
 | `.colormath/audit.conf` | `deps` | poetry groups that ship + CVE allowlist ([reference](example/.colormath/audit.conf)) |
 | npm scripts `test`, `jslint`, `styles`, `a11y` | the JS gates | see [example/package.json](example/package.json) |
 | `eslint.config.js` + vendored `eslint.config.colormath.mjs` | `jslint` | thin caller of the shared eslint base ([reference](example/eslint.config.js)); devDeps `eslint`, `@eslint/js`, `globals` |

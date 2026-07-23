@@ -7,11 +7,32 @@ changes may land in any release.
 
 ## Unreleased
 
-MINOR: new plugin skill. No gate, workflow, terraform or Makefile surface
-changes, so a consumer's CI cannot change colour from this release.
+MINOR: one new opt-in gate and one new plugin skill. The gate ships **opt-in**
+per the new-gate rollout rule — existing consumers see a skipped
+`import-linter` job until they set `enable-import-linter: true`; promotion to
+default-on comes with the next MAJOR. The skill adds no gate/workflow surface,
+so no consumer's CI can change colour from this release.
 
 ### Added
 
+- **`import-linter` gate** (import-linter): enforces the project's import
+  architecture — layered dependency order, forbidden edges, module
+  independence — via `lint-imports`. Pure static analysis (grimp builds the
+  import graph without executing code), so no project deps are installed,
+  mirroring `docstrings`/`templates`. The contracts are entirely
+  project-specific and come from `[tool.importlinter]` in the consumer's
+  pyproject (or a `.importlinter` file), which `lint-imports` auto-discovers.
+  New inputs: `import-linter-spec` (`"import-linter>=2,<3"`) and
+  `enable-import-linter` (**default `false`**). Flat-layout note: `root_packages`
+  takes packages (dirs with `__init__.py`), so to forbid a top-level single-file
+  module (e.g. a `shared.py`) set `include_external_packages = True` and name it
+  in `forbidden_modules`.
+- `Makefile.colormath`: `import-linter` target with a
+  `COLORMATH_IMPORT_LINTER_SPEC` knob. Not in `preflight` while the CI gate is
+  opt-in.
+- `example/`: an `example_pkg` (service + web layers) with a `[tool.importlinter]`
+  `forbidden` contract (service must not import web) and a covering test;
+  colormath's self-test runs with `enable-import-linter: true`.
 - **`/colormath:qa` plugin skill** (`plugin/skills/qa/`): QAs a focus area
   against the running stack, then hands the fixes to `/colormath:ship`.
   Recon (bring the stack up without disturbing existing state; collect

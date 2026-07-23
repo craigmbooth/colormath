@@ -102,6 +102,10 @@ on:
         description: pip requirement spec for djlint (match your pyproject dev pin)
         type: string
         default: "djlint>=1.36,<2"
+      import-linter-spec:
+        description: pip requirement spec for import-linter (match your pyproject dev pin)
+        type: string
+        default: "import-linter>=2,<3"
       djlint-paths:
         description: Space-separated template paths for djlint to lint; profile/ignores come from [tool.djlint]
         type: string
@@ -172,6 +176,10 @@ on:
       enable-diff-coverage:
         type: boolean
         default: true
+      # Opt-in while new (LIFECYCLE new-gate rollout); default-on at the next MAJOR.
+      enable-import-linter:
+        type: boolean
+        default: false
 
 env:
   # Resolved base branch for diff-coverage: explicit input, else repo default.
@@ -405,6 +413,55 @@ jobs:
           log-files: /tmp/interrogate.log
           stats: |
             result=$(grep -m1 -oE 'RESULT: [A-Z]+ \(minimum: [0-9.]+%, actual: [0-9.]+%\)' /tmp/interrogate.log 2>/dev/null || echo 'see log')
+            echo "- ${result}"
+
+  import-linter:
+    name: Import boundaries (import-linter)
+    if: ${{ inputs.enable-import-linter }}
+    runs-on: ubuntu-latest
+    # import-linter (via grimp) builds the import graph by static analysis — no
+    # project deps needed, same as interrogate. The architecture it enforces —
+    # layers / forbidden / independence contracts — is entirely project-specific,
+    # so it comes from [tool.importlinter] in the consumer's pyproject (or a
+    # .importlinter file); lint-imports auto-discovers it. Opt-in while new;
+    # default-on arrives with the next MAJOR.
+    defaults:
+      run:
+        working-directory: ${{ inputs.workdir }}
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v6
+
+      - name: Check out colormath (gate tooling)
+        uses: actions/checkout@v6
+        with:
+          repository: ColorMath/ci
+          ref: ${{ inputs.colormath-ref }}
+          path: .colormath-lib
+          sparse-checkout: |
+            scripts
+            .github
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: Install import-linter
+        run: pip install '${{ inputs.import-linter-spec }}'
+
+      - name: Check import contracts
+        run: lint-imports 2>&1 | tee /tmp/import-linter.log
+
+      - name: Gate summary
+        if: always()
+        uses: ./.colormath-lib/.github/actions/gate-summary
+        with:
+          title: "🧭 Import boundaries (import-linter)"
+          status: ${{ job.status }}
+          log-files: /tmp/import-linter.log
+          stats: |
+            result=$(grep -m1 -oE 'Contracts: [0-9]+ kept, [0-9]+ broken\.' /tmp/import-linter.log 2>/dev/null || echo 'see log')
             echo "- ${result}"
 
   migrations:
