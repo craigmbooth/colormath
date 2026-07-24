@@ -5,6 +5,58 @@ one SemVer stream, exact-tag pins, MAJOR = anything that can turn a consumer's
 green CI red without the consumer editing anything. While on `0.x`, breaking
 changes may land in any release.
 
+## v2.1.0 — 2026-07-23
+
+**MINOR — `/colormath:ship` gains test-plan execution and can now auto-merge;
+no consumer CI changes.** Nothing a consumer runs turns red without them
+editing anything (the `test-plan` job already ships in the review workflow
+since v2.0.0). But note the **behavior change**: where `ship` previously stopped
+at a merge *recommendation* and never merged, it now fixes findings itself
+(blockers included) and, when the PR is genuinely clean, **merges it**. Repos
+without the review workflow are unaffected — the skill detects its absence,
+skips QA, and its final review holds rather than merging a PR it couldn't
+verify.
+
+### Changed
+
+- **`/colormath:ship` now executes the PR's test plan** (`plugin/skills/ship/`).
+  A new step 4 waits for the `review / test-plan` check, reads the `## Test
+  Plan` comment and its machine-readable verdict (`qa_depth` / `requires_ui_qa`
+  / `requires_api_qa`), runs the UI/API QA checklists against the **running**
+  stack — reusing the `qa` skill's recon + verify discipline, scaling effort by
+  `qa_depth`, driving a browser for UI items when one is reachable and marking
+  them `⚠️` unverified when not — then posts a `## Test Plan · Results` comment
+  checking off each item with the evidence it observed. A new step 6 restores
+  any local state the run mutated. The skill's `allowed-tools` widen to broad
+  `Bash` + `Write` + `Skill` + `AskUserQuestion` (step 4 drives the local stack,
+  which no narrow `gh`/`git` allowlist covers); `model` is unchanged.
+
+- **`/colormath:ship` now fixes findings automatically and gates the merge, not
+  the fix.** The old SMALL/LARGE triage is gone. Step 5 fixes every review and
+  `❌` QA finding it can — **Blockers included, without asking** — in iterative
+  rounds (re-verify each repro against the running system; re-trigger the review
+  with `@claude` once when fixes are substantive), deferring only findings that
+  genuinely need a human (a design decision, or a `CHANGES_REQUESTED` structural
+  call). A new **step 7 "final review"** then decides: if no blockers stand
+  *and* QA was performed and passed, it posts a comment and **auto-merges**
+  (`gh pr merge`, honoring the repo's merge convention); if either is false —
+  a standing blocker, a finding deferred to a human, or QA that failed or
+  couldn't run (e.g. a required UI item with no browser) — it posts *why* it
+  held off and stops, leaving the merge to a human. The former hard rule "never
+  merge" is replaced by this gated auto-merge; "never push to the default
+  branch" still holds (a `gh pr merge` is not a push to `main`).
+
+  Contract surfaces it depends on — a rename of any must ship with a matching
+  skill update: the review workflow's `review / test-plan` check name, the
+  `## Test Plan` comment marker with its `<!-- colormath-test-plan -->` /
+  `<!-- testplan … -->` hidden markers and the `qa_depth` / `requires_ui_qa` /
+  `requires_api_qa` verdict fields, the sibling `qa` skill's `references/`
+  (recon + probe catalogs), and — as before — the `gates / *` check names, the
+  `review / review` check, and the `## Thermonuclear Review` marker.
+
+- Plugin bumped to `2.1.0`; marketplace blurb notes `/colormath:ship` now
+  executes the generated test plan and auto-merges when clean.
+
 ## v2.0.0 — 2026-07-23
 
 **MAJOR — two formerly opt-in gates flip default-on.** `migrations` (shipped
