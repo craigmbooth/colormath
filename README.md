@@ -251,8 +251,12 @@ generated **test plan** against the running stack and post its results, fix
 every finding it can — blockers included) and ends at a gated final review that
 **auto-merges** when the PR is genuinely clean or holds and explains why;
 **`/colormath:qa`** QAs a focus area against the running stack and hands the
-fixes to `ship`. Each skill's behavior, prerequisites, and contract
-dependencies are documented in [plugin/README.md](plugin/README.md).
+fixes to `ship`; **`/colormath:bugfix`** turns a *specific* bug report into a
+merged fix — establishing the facts the report omitted, reproducing the defect
+before touching code, fixing at the layer the invariant belongs to, remediating
+data the bug already corrupted, then handing off to `ship`. Each skill's
+behavior, prerequisites, and contract dependencies are documented in
+[plugin/README.md](plugin/README.md).
 
 Install manually:
 

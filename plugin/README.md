@@ -117,6 +117,57 @@ often holds a live provider key.
   two disagree.
 - `/colormath:ship` for the handoff in step 6.
 
+## `/colormath:bugfix` — a bug report, all the way to a merged fix
+
+Takes a bug report (`/colormath:bugfix users can't log in with the account
+they just created`) and carries it end to end, on the principle that a report
+is *evidence, not a specification* — the expensive failure is forming a
+plausible theory and proving it against the wrong environment or surface:
+
+1. **Read the report, find what's missing** — separates what the report states
+   from what you'd be assuming, and asks about the gaps that actually change
+   the next action: which environment (production / staging / local / CI),
+   which surface, the literal input and observed-vs-expected result, which
+   privilege tier, when it started, and whether it's still producing bad data.
+   Does a fast code pass *first* so the questions are concrete multiple choice
+   rather than open interrogation, and batches them into one round. Skips the
+   round entirely when the report is already reproducible as written.
+2. **Reproduce against the running stack** — reuses the `qa` skill's
+   `references/recon.md` for bringing the stack up without disturbing existing
+   state and for credentials at the tier the report names, then drives the
+   failure at the same surface over the real transport. For production
+   reports it works the local/prod delta explicitly — configuration, data
+   written before a constraint existed, migration state, scale — since that
+   delta is frequently the bug. **Never modifies production.** If it can't
+   reproduce, it stops and reports what it tried and ruled out rather than
+   shipping a speculative fix.
+3. **Diagnose the defect, not the symptom** — traces back from where the error
+   surfaced to where the invariant went unenforced, and picks the *layer* to
+   fix at so the bug can't re-enter through a sibling path (a check on one form
+   leaves every other route in; the service chokepoint closes all of them).
+   Enumerates those siblings and confirms the fix covers them.
+4. **Fix with a regression test that earns its keep** — test at the layer the
+   fix lives at, with the fail-then-pass ordering actually verified (stash the
+   fix, watch it go red), then re-runs the original repro against the running
+   stack, because a green unit test only proves the case you thought of.
+5. **Remediate data the defect already corrupted** — characterizes affected
+   rows with a real query, catches the constraint trap (a new `NOT NULL` /
+   `CHECK` / unique index against existing violating rows fails or locks users
+   out), puts the mechanically-repairable part in the same PR as an idempotent
+   migration tested against locally-constructed broken data, and hands over
+   what no script can recover instead of guessing at it.
+6. **Ship** — commits to `fix/<slug>`, runs `make preflight` once, then hands
+   off to `/colormath:ship` with a PR body carrying the report, the repro, the
+   cause, why the fix sits at that layer, and the remediation.
+
+**Prerequisites:**
+
+- A locally runnable stack with run commands and ports in `AGENTS.md` /
+  `CLAUDE.md`, and seeded accounts at several privilege tiers — same
+  prerequisites as `/colormath:qa`, whose `references/recon.md` step 2 reads.
+- `make preflight` (step 6) and `/colormath:ship` for the handoff.
+- A browser is optional but makes UI-surface reproduction far more direct.
+
 ## Adding a skill
 
 One directory per skill: `skills/<name>/SKILL.md` with frontmatter
