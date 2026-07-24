@@ -5,6 +5,45 @@ one SemVer stream, exact-tag pins, MAJOR = anything that can turn a consumer's
 green CI red without the consumer editing anything. While on `0.x`, breaking
 changes may land in any release.
 
+## v2.2.0 — 2026-07-24
+
+**MINOR — new `/colormath:bugfix` skill; no consumer CI changes.** Purely
+additive: a new plugin skill, which LIFECYCLE classifies as MINOR. Nothing a
+consumer runs changes behavior, and the existing skills are untouched.
+
+### Added
+
+- **`/colormath:bugfix` — a bug report, all the way to a merged fix**
+  (`plugin/skills/bugfix/`). Fills the gap on the front of the pipeline:
+  `/colormath:qa` sweeps a feature area for *unknown* problems and `ship` takes
+  an already-fixed branch through the PR, but neither turns a *specific
+  reported* defect into a fix. The skill reads the report (prose, a pasted
+  stack trace or log excerpt, or a path to a written-up report file), then
+  works six steps — establish the facts the report omitted (environment,
+  surface, literal repro, privilege tier, blast radius) via one batched round
+  of concrete `AskUserQuestion` options informed by a fast code pass first;
+  reproduce against the running stack at the reporter's surface and tier;
+  diagnose to the layer the invariant belongs at, enumerating sibling entry
+  paths; fix with a regression test whose fail-then-pass ordering is actually
+  verified; remediate already-corrupted stored data as an idempotent migration
+  in the same PR (including the constraint-trap check, where a new
+  `NOT NULL`/`CHECK`/unique index meets existing violating rows); then commit
+  to `fix/<slug>`, run `make preflight`, and hand off to `/colormath:ship`.
+
+  Two refusals are deliberate and load-bearing: it **never modifies
+  production** — production reports are reproduced locally by constructing data
+  in the shape the report implies, and remediation lands through the PR — and
+  when it cannot reproduce, it **stops and reports** what it tried, ruled out,
+  and needs, rather than shipping a fix that's reasoned instead of observed.
+  This mirrors ship's "when in doubt, hold".
+
+  Contract surfaces it depends on — a rename of any must ship with a matching
+  skill update: the sibling `qa` skill's `references/recon.md` (step 2's stack
+  bring-up + credential tiers), the `make preflight` endpoint, and the
+  `/colormath:ship` skill name for the step-6 handoff.
+
+- Plugin bumped to `2.2.0`; marketplace blurb notes the new skill.
+
 ## v2.1.0 — 2026-07-23
 
 **MINOR — `/colormath:ship` gains test-plan execution and can now auto-merge;
