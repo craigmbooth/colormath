@@ -1,6 +1,6 @@
 ---
 name: ship
-description: Open a PR, wait for gates + review + test plan, execute the test plan against the running stack, fix every finding (blockers included), then auto-merge when clean or hold and explain
+description: Open a PR, wait for gates + review + test plan, execute the test plan against the running stack, fix every finding (blockers included), then decide once — auto-merge when clean, or hold for a human. Never re-triggers the review.
 argument-hint: [optional PR title]
 allowed-tools: Bash Read Edit Write Grep Glob Skill AskUserQuestion
 model: claude-sonnet-4-6
@@ -10,10 +10,13 @@ Ship the current branch through the PR pipeline end to end. This repo uses
 the colormath (ColorMath/ci) gates and, optionally, its review workflow — which
 runs two agents in parallel: the thermonuclear **review** and a **test plan**
 that you then execute against the running stack. You **fix** what the review
-and the QA turn up — blockers included, without asking — and end at a **final
-review** that either auto-merges the PR (when it's genuinely clean) or holds and
-explains why. Use the `gh` CLI for every GitHub operation. Give me a one-line
-status at each step.
+and the QA turn up — blockers included, without asking — and end at a **merge
+decision** that either auto-merges the PR (when it's genuinely clean) or holds
+and asks for a human. Use the `gh` CLI for every GitHub operation. Give me a
+one-line status at each step.
+
+The shape is linear and runs **once**: review → respond + QA → decide. There is
+no second review round; see step 5.
 
 Broad `Bash` is in `allowed-tools` on purpose: step 4 drives the local stack
 (`make up`, DB queries, `curl`, throwaway driver scripts) to actually run the
@@ -45,7 +48,7 @@ workflow under `.github/workflows/` whose job `uses:`
 `ColorMath/ci/.github/workflows/review.yml`. If there is none, skip step 4 (no
 test plan is generated either) and go straight to step 5 with whatever formal
 reviews exist; say explicitly that no automated review is configured. Note for
-step 7: with no automated review + QA to stand on, the final review **holds** —
+step 7: with no automated review + QA to stand on, the merge decision **holds** —
 it does not auto-merge a PR it couldn't verify.
 
 That workflow also runs a **third** parallel agent — the test-plan agent
@@ -200,22 +203,32 @@ Leave those unfixed and record them clearly. They are what step 7 weighs when
 it decides whether to hold the merge — an honest "deferred to a human" is fine;
 a silent skip is not.
 
-Then close the loop — this is iterative, in rounds until it's clean:
+Then close the loop:
 - **Re-verify against the running system.** Re-run each QA repro you fixed; a
   green unit test is not proof the bug is gone (step 4's rule). Keep fixing and
   re-running until every `❌` you can resolve is `✅`, or you hit one of the
   can't-auto-fix findings above.
-- If the fixes were substantive, the earlier review judged now-stale code —
-  re-trigger it by commenting `@claude` on the PR and wait for `review / review`
-  again (step 3's wait), so step 7 judges the branch as it now stands. Cap this
-  at one re-trigger round: if a fresh round of Blockers appears, stop resolving
-  and treat it as "needs a human" (step 7 will hold).
 - Let the gates re-run green on the new commit.
 - Post the **Addressed / Not changed** response comment (see Rules), and update
   the `## Test Plan · Results` comment to reflect the re-verified state.
 
+**Do NOT re-trigger the review.** There is exactly **one** thermonuclear review
+per ship run, and you have already read it. Commenting `@claude` to ask for a
+fresh look is the one thing guaranteed to make this skill loop forever: a new
+review spawns a new test-plan agent, whose new plan asks for a fresh round of
+QA, whose fixes look "substantive" enough to justify another re-review. That
+loop has no exit condition and burns a full QA cycle each time round.
+
+You do not need a reviewer to bless your fixes — **you** re-verified them
+against the running system, and the gates re-ran green on the new commit. That
+is the evidence step 7 judges. Go straight there.
+
+(A *human* who reviews after your fixes is different: read and address anything
+they add, exactly as in step 5. This rule is only about not summoning another
+automated review.)
+
 ## 6. Restore the environment
-Step 4 treated local state as yours — undo it before the final review. Delete
+Step 4 treated local state as yours — undo it before the merge decision. Delete
 the rows and files you created, revoke any credentials you minted, restore any
 config or feature flag you changed, and confirm the baseline from step 4
 matches. QA debris poisons the next run, and a flipped provider or flag left
@@ -223,47 +236,68 @@ flipped is its own outage. Restoring does not erase the QA *result* you already
 recorded — step 7 still knows whether QA passed. Show me the restored state in
 your final report. (Skip if step 4 was skipped or you mutated nothing.)
 
-## 7. Final review — auto-merge, or hold and explain
-The go/no-go, and the one place this skill merges. Reach it only after the
-review is addressed and every QA round is complete (step 5) and the environment
-is restored (step 6). Evaluate two gates against the **current** state of the
-branch:
+## 7. Merge decision — auto-merge, or hold and explain
+The go/no-go, and the one place this skill merges. Reach it directly from step
+5/6 — **never** via another review round. Decide from what you already have: the
+single thermonuclear review, your responses to it, your QA results, and the
+gates on the current commit.
 
-1. **No blockers stand.** Gates are green; no Blocker or [high-confidence]
-   security/correctness finding is left unresolved; no formal review is sitting
-   at `CHANGES_REQUESTED`; and nothing was deferred to a human (the
-   design/structural findings from step 5).
-2. **QA was performed and passed.** The test plan actually ran — the stack came
-   up and every required item was executable — and every executed item is `✅`,
-   with no required item left `❌` or `⚠️` unverified. If a required UI item
-   couldn't be driven (no browser reachable) or the stack wouldn't come up, QA
-   was **not** performed and this gate fails. (No review workflow at all → no
-   test plan → this gate fails too.)
+Evaluate three gates against the **current** state of the branch:
 
-**Both true → auto-merge.** Post a PR comment saying you are auto-merging and
-why — name the evidence: gates green, review clean (or re-run clean), QA passed
-(N of N items). Then merge with `gh pr merge <number>` using the repo's
-established convention — inspect recent merges (`gh pr list --state merged`, or
-`git log`) and pass the matching flag (`--squash` / `--merge` / `--rebase`);
-default to `--squash` if it's unclear. Report the merge to me.
+1. **The review had no Blockers.** Judged from the thermonuclear review as
+   posted. If it raised even one **Blocker**, hold for a human — *even if you
+   fixed it*. You still fix it in step 5; a Blocker simply means a person signs
+   off on the merge rather than this skill. Suggestions and nits never block.
+2. **Every review finding is resolved or consciously dismissed.** Each one is
+   either fixed, or dismissed with a written reason in the **Addressed / Not
+   changed** comment. Nothing silently skipped, nothing left needing a design
+   decision or a structural rework (step 5's can't-auto-fix pair), and no formal
+   human review sitting at `CHANGES_REQUESTED`. Gates are green on the latest
+   commit.
+3. **QA ran, and every gap is explained.** The test plan executed — the stack
+   came up and you drove the items — with **no `❌` left standing**. A `⚠️` does
+   **not** block *if* you can say plainly why it was skipped and why skipping is
+   sound. Legitimate, explainable gaps look like:
+   - "Didn't run `make clean` — it would drop the working dev database. Ran the
+     equivalent code path directly instead."
+   - "Unicode/IDN addresses untested — the plan itself listed that as residual
+     risk, not a required item."
 
-**Either false → hold.** Do **not** merge. Post a PR comment that states plainly
-what held it off — each standing blocker, each finding deferred to a human, and
-any QA item that failed or couldn't be performed (say which and why) — plus what
-you'd do next. Then STOP and report the same to me: "Held off auto-merge —
-here's why: …". When in doubt, hold: a wrong hold costs a human one click; a
-wrong merge is on the default branch.
+   What is **not** explainable, and does block: QA that never ran at all, a
+   required UI item you couldn't drive because no browser was reachable, a stack
+   that wouldn't come up, or a `⚠️` with no stated reason. "I didn't get to it"
+   is not an explanation. No review workflow at all → no test plan → this gate
+   fails.
+
+**All three true → auto-merge.** Post a PR comment saying you are merging and
+why, naming the evidence: gates green, N findings addressed (0 Blockers), QA
+run with N items `✅` and each `⚠️` and its reason listed. Then merge with
+`gh pr merge <number>` using the repo's established convention — inspect recent
+merges (`gh pr list --state merged`, or `git log`) and pass the matching flag
+(`--squash` / `--merge` / `--rebase`); default to `--squash` if it's unclear.
+Report the merge to me.
+
+**Any false → hold and ask for a human.** Do **not** merge. Post a PR comment
+that states plainly what held it off — each Blocker the review raised, each
+finding deferred, and any QA item that failed or couldn't be performed (say
+which and why) — plus what you'd do next and what you want the human to look at.
+Then STOP and report the same to me: "Held off auto-merge — here's why: …".
+When in doubt, hold: a wrong hold costs a human one click; a wrong merge is on
+the default branch.
 
 ## Rules
 - **Never push to the default branch** (`git push origin main`). Merging a PR
   via `gh pr merge` in step 7 is the sanctioned way to land it — that is not the
   same thing.
-- **Fix automatically; don't ask before fixing.** Blockers included (step 5).
-  The only gate left for a human is the merge — and even that is automatic when
-  step 7's two conditions both hold. Auto-merge happens **only** from step 7,
-  **only** with both gates satisfied, and **always** with a PR comment posted
-  first. If either gate fails, hold and explain — never merge on a silent,
-  failed, or stale review, or on QA that couldn't run.
+- **Fix automatically; don't ask before fixing.** Blockers included (step 5) —
+  fixing a Blocker is automatic, *merging* after one is not. Auto-merge happens
+  **only** from step 7, **only** with all three gates satisfied, and **always**
+  with a PR comment posted first. If any gate fails, hold and explain — never
+  merge on a silent or failed review, or on QA that couldn't run.
+- **One review per run.** Read the thermonuclear review once (step 3), respond
+  to it and do the QA (steps 4–5), then decide (step 7). Never comment `@claude`
+  to request a re-review — it spawns a fresh test plan and a fresh QA round, and
+  the cycle does not terminate.
 - **Whenever you push a commit that responds to a review or a test-plan
   finding, post a PR comment** (`gh pr comment <number>`) detailing what you did
   and did not do: group it as **Addressed** (each finding + the change that
