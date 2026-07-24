@@ -5,6 +5,46 @@ one SemVer stream, exact-tag pins, MAJOR = anything that can turn a consumer's
 green CI red without the consumer editing anything. While on `0.x`, breaking
 changes may land in any release.
 
+## v2.3.0 — 2026-07-24
+
+**MINOR — `/colormath:ship` no longer re-triggers the review; adds an explicit
+merge-decision gate. No consumer CI changes.** Only skill instructions change;
+nothing a consumer runs behaves differently.
+
+### Fixed
+
+- **`ship` could loop forever between review and QA.** Step 5 told the agent to
+  comment `@claude` for a fresh review whenever its fixes were "substantive".
+  But the review workflow runs the test-plan agent alongside the reviewer, so
+  every re-review produced a *new* test plan, which demanded a *new* full round
+  of UI + API QA, whose fixes again looked substantive. Observed in practice on
+  a real PR: the agent completed a full browser QA pass, posted its checklist,
+  requested a re-review, and was immediately asked for another QA round. The
+  "cap this at one re-trigger round" wording was too weak to stop it.
+
+  There is now exactly **one** review per ship run. Step 5 states the failure
+  mode explicitly and forbids `@claude` re-triggers, and a new Rules entry
+  ("One review per run") repeats it. Findings added later by a *human* reviewer
+  are still read and addressed — the rule only bars summoning another automated
+  review.
+
+### Changed
+
+- **Step 7 is now "Merge decision", not "Final review"** — it judges what the
+  run already produced (the single review, the Addressed/Not-changed response,
+  the QA results, the gates on the latest commit) rather than implying another
+  review pass. Three explicit gates:
+  1. the thermonuclear review raised **no Blockers** — if it did, a human signs
+     off, *even when the agent already fixed it*;
+  2. every finding is fixed or dismissed with a written reason, gates green;
+  3. QA ran with no `❌` standing, and **every `⚠️` carries a stated, sound
+     reason**.
+- **Explainable QA gaps no longer block the merge.** The old gate failed on any
+  `⚠️`, which punished correct judgment — e.g. skipping `make clean` precisely
+  *because* it would destroy the working dev database. A `⚠️` now passes when
+  the reason is stated and sound, and still blocks when it is "didn't get to
+  it", an undrivable UI item, or a stack that wouldn't come up.
+
 ## v2.2.0 — 2026-07-24
 
 **MINOR — new `/colormath:bugfix` skill; no consumer CI changes.** Purely
