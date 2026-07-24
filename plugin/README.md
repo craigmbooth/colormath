@@ -28,14 +28,33 @@ recommendation:
    review workflow. Knows the review's failure modes (e.g. the
    workflow-validation guard when a PR edits the review caller itself) and
    reports them instead of treating silence as a clean review.
-4. **Triage and recommend** — classifies findings SMALL (mechanical,
-   localized, no design call) or LARGE (blockers, high-confidence
-   correctness/security, structural suggestions). SMALL: applies the fixes,
-   posts an **Addressed / Not changed** response comment, recommends merge.
-   LARGE: summarizes and hands back to you.
+4. **Execute the test plan** — waits for the `review / test-plan` check, reads
+   the `## Test Plan` comment and its machine-readable verdict (`qa_depth` /
+   `requires_ui_qa` / `requires_api_qa`), then runs the UI/API QA checklists
+   against the **running** stack — reusing the `qa` skill's recon + verify
+   discipline, scaling effort by `qa_depth`, driving a browser for UI items
+   when one is reachable and marking them `⚠️` unverified when not. Posts a
+   `## Test Plan · Results` comment checking off each item with the evidence it
+   observed; `❌` findings feed the fixes in step 5. Skipped in repos without
+   the review workflow.
+5. **Fix every finding — blockers included** — fixes every review finding and
+   every `❌` QA finding it can, **without asking**, in iterative rounds
+   (re-verifying each repro against the running stack, re-triggering the review
+   with `@claude` once when fixes are substantive), and posts the **Addressed /
+   Not changed** response comment. Only findings that genuinely need a human — a
+   design decision, or a `CHANGES_REQUESTED` structural call — are deferred.
+6. **Restore** — undoes any local state step 4 mutated (rows, files, minted
+   credentials, flipped config), and shows you the restored baseline.
+7. **Final review — auto-merge or hold** — if no blockers stand *and* QA was
+   performed and passed, posts a comment and **auto-merges** the PR
+   (`gh pr merge`, honoring the repo's merge convention). If either isn't true —
+   a standing blocker, a finding deferred to a human, or QA that failed or
+   couldn't run — it posts *why* it held off and stops, leaving the merge to
+   you.
 
-Hard rules baked in: it never pushes to the default branch and never merges —
-merging is always a human decision.
+Hard rules baked in: it never pushes to the default branch, and it merges
+**only** from the gated step-7 final review (both conditions satisfied, with a
+PR comment first) — otherwise it holds and explains.
 
 **Prerequisites:**
 
@@ -44,11 +63,19 @@ merging is always a human decision.
   the `gates / *` check names it produces.
 - Optional: the colormath review caller (job named `review`, per the adoption
   docs) — step 3 keys on the `review / review` check and the
-  `## Thermonuclear Review` comment marker.
-- The skill pre-approves only the tools it needs (`gh pr *`, `gh api`,
-  `git push`, and read/edit tools) via its frontmatter `allowed-tools`;
-  consumer repos can mirror that list in `.claude/settings.json` permissions
-  to avoid prompts (see intendent for a worked example).
+  `## Thermonuclear Review` comment marker; step 4 keys on the
+  `review / test-plan` check and the `## Test Plan` comment (with its
+  `<!-- colormath-test-plan -->` / `<!-- testplan … -->` verdict markers).
+- For step 4, a locally runnable stack (run commands + ports in
+  `AGENTS.md` / `CLAUDE.md`) and seeded accounts — same prerequisites as
+  `/colormath:qa`, whose `references/` it reuses. A browser is optional: UI
+  checklist items are driven through one when reachable and marked `⚠️`
+  unverified when not.
+- The skill's `allowed-tools` are broad (`Bash`, plus read/edit/write, `Skill`,
+  `AskUserQuestion`) because step 4 drives the local stack, which no narrow
+  `gh`/`git` allowlist covers; consumer repos can mirror that in
+  `.claude/settings.json` permissions to avoid prompts (see intendent for a
+  worked example).
 
 ## `/colormath:qa` — QA a feature, then ship the fixes
 

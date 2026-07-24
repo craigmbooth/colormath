@@ -244,11 +244,14 @@ reviews from the Actions UI (or flip the PR draft → ready).
 ## Optional: Claude Code plugin
 
 This repo is also a [Claude Code plugin marketplace](https://code.claude.com/docs/en/plugin-marketplaces).
-The `colormath` plugin ships skills for working in consumer repos — currently
-**`/colormath:ship`**: take the current branch through the whole PR pipeline
-(open the PR, watch the gates, wait for the Thermonuclear Review, triage
-findings, apply small fixes) and stop at a merge recommendation — never
-merging itself. Each skill's behavior, prerequisites, and contract
+The `colormath` plugin ships skills for working in consumer repos:
+**`/colormath:ship`** takes the current branch through the whole PR pipeline
+(open the PR, watch the gates, wait for the Thermonuclear Review, execute the
+generated **test plan** against the running stack and post its results, fix
+every finding it can — blockers included) and ends at a gated final review that
+**auto-merges** when the PR is genuinely clean or holds and explains why;
+**`/colormath:qa`** QAs a focus area against the running stack and hands the
+fixes to `ship`. Each skill's behavior, prerequisites, and contract
 dependencies are documented in [plugin/README.md](plugin/README.md).
 
 Install manually:
